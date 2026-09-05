@@ -6,3 +6,7 @@
  */
 
 export const ENGINE_VERSION = "0.1.0";
+
+export { Scene } from "./scene/scene";
+export { createElement } from "./scene/factory";
+export { indexBetween } from "./scene/fractional-index";
