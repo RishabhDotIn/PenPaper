@@ -33,3 +33,5 @@ export {
 
 export { Quadtree } from "./math/quadtree";
 export { hitTest, hitsElement } from "./math/hit-test";
+
+export { computeBackingSize, visibleBounds, type BackingSize } from "./render/surface";
