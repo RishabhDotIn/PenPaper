@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/*
+ * Tokens measured from excalidraw.com (docs/reference/excalidraw-ui.md).
+ * The engine never reads these: it gets the same values as plain TypeScript
+ * objects, because reading CSS variables inside a frame loop is a layout
+ * dependency in the hot path.
+ */
+:root {
+  color-scheme: light;
+
+  --surface-lowest: #ffffff;
+  --surface-low: #ececf4;
+  --surface-mid: #f6f6f9;
+  --surface-high: #f1f0ff;
+  --surface-container: #e0dfff;
+  --on-surface: #1b1b1f;
+  --on-surface-muted: #5c5c5c;
+
+  --primary: #6965db;
+  --primary-hover: #5753d0;
+  --primary-active: #4440bf;
+  --on-primary: #ffffff;
+
+  --danger: #db6965;
+  --grid: #ebebeb;
+  --island-bg: #ffffff;
+
+  --shadow-island:
+    0 0 1px rgba(0, 0, 0, 0.17),
+    0 0 3px rgba(0, 0, 0, 0.08),
+    0 7px 14px rgba(0, 0, 0, 0.05);
+
+  --radius-island: 8px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --surface-lowest: #121212;
+    --surface-low: #232329;
+    --surface-mid: #191919;
+    --surface-high: #2e2d39;
+    --surface-container: #403e6a;
+    --on-surface: #e3e3e8;
+    --on-surface-muted: #a8a8b3;
+
+    --primary: #a8a5ff;
+    --primary-hover: #bbb8ff;
+    --primary-active: #d0ccff;
+    --on-primary: #121212;
+
+    --grid: #2e2d39;
+    --island-bg: #232329;
+  }
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: var(--surface-lowest);
+  color: var(--on-surface);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* The canvas sets touch-action: none itself; the page must still scroll
+     nowhere, or iOS hands drag gestures to the document. */
+  overscroll-behavior: none;
+}
+
+/* A visible focus ring that survives on both themes. */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Never animate for people who asked us not to. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
