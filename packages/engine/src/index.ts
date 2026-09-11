@@ -41,3 +41,16 @@ export { RoughCache } from "./render/rough-cache";
 export { drawElement } from "./render/shapes";
 export { createStaticLayer, type StaticLayer } from "./render/static-layer";
 export { darkTheme, lightTheme, type Theme } from "./render/theme";
+
+export { InputController, type ControllerDeps } from "./input/controller";
+export { InteractionFSM, type InteractionState } from "./input/fsm";
+export { GestureArbiter } from "./input/gestures";
+export { PalmRejection } from "./input/palm";
+export type { PointerInput, PointerKind, WheelInput } from "./input/pointer";
+export {
+  SHAPE_TOOLS,
+  TOOL_LABELS,
+  TOOL_SHORTCUTS,
+  isShapeTool,
+  type Tool,
+} from "./input/tools";
