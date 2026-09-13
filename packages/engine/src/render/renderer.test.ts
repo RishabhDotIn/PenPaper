@@ -49,4 +49,49 @@ describe("Renderer", () => {
     const renderer = new Renderer(fakeCtx(), scene, { x: 0, y: 0, zoom: 1 }, { width: 800, height: 600 });
     expect(renderer.render()).toMatchObject({ drawn: 1, culled: 0 });
   });
+
+  it("paints the selection overlay and repaints only when selection changes", () => {
+    const scene = new Scene();
+    const el = createElement("rectangle", { x: 10, y: 10, width: 100, height: 80 }, "V");
+    scene.add(el);
+
+    const ctx = fakeCtx();
+    const renderer = new Renderer(ctx, scene, { x: 0, y: 0, zoom: 1 }, {
+      width: 800,
+      height: 600,
+      grid: false,
+    });
+    renderer.render();
+    ctx.reset();
+
+    renderer.setSelection([el]);
+    renderer.render();
+    // Eight edge handles plus the rotation handle.
+    expect(ctx.calls.filter((call) => call === "arc")).toHaveLength(9);
+
+    ctx.reset();
+    renderer.setSelection([el]);
+    renderer.render();
+    expect(ctx.calls).toHaveLength(0);
+  });
+
+  it("paints the marquee while a selection box is being dragged", () => {
+    const ctx = fakeCtx();
+    const renderer = new Renderer(ctx, new Scene(), { x: 0, y: 0, zoom: 1 }, {
+      width: 800,
+      height: 600,
+      grid: false,
+    });
+    renderer.render();
+    ctx.reset();
+
+    renderer.setMarquee({ x: 10, y: 10, width: 100, height: 50 });
+    renderer.render();
+    expect(ctx.calls).toContain("fillRect");
+
+    ctx.reset();
+    renderer.setMarquee({ x: 10, y: 10, width: 100, height: 50 });
+    renderer.render();
+    expect(ctx.calls).toHaveLength(0);
+  });
 });

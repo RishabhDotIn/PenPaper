@@ -152,4 +152,132 @@ describe("InputController", () => {
 
     expect(c.state).toBe("idle");
   });
+
+  it("resizes from the south-east handle of the selected element", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const c = new InputController({ ...deps, hitTest: () => el.id });
+    c.pointerDown({ ...basePointer, x: 50, y: 50 });
+    c.pointerUp({ ...basePointer, x: 50, y: 50 });
+
+    // The corner handle sits on the element's own corner at 100% zoom.
+    c.pointerDown({ ...basePointer, x: 100, y: 100 });
+    expect(c.state).toBe("resizing");
+
+    c.pointerMove({ ...basePointer, x: 200, y: 150 });
+    c.pointerUp({ ...basePointer, x: 200, y: 150 });
+
+    expect(deps.scene.get(el.id)).toMatchObject({ x: 0, y: 0, width: 200, height: 150 });
+    expect(c.state).toBe("idle");
+  });
+
+  it("resizes in screen space, so handles stay reachable when zoomed in", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const c = new InputController({ ...deps, camera: { x: 0, y: 0, zoom: 2 }, hitTest: () => el.id });
+    c.pointerDown({ ...basePointer, x: 100, y: 100 });
+    c.pointerUp({ ...basePointer, x: 100, y: 100 });
+
+    // At 2x the south-east corner is at screen (200, 200).
+    c.pointerDown({ ...basePointer, x: 200, y: 200 });
+    expect(c.state).toBe("resizing");
+    c.pointerMove({ ...basePointer, x: 400, y: 400 });
+    c.pointerUp({ ...basePointer, x: 400, y: 400 });
+
+    expect(deps.scene.get(el.id)).toMatchObject({ width: 200, height: 200 });
+  });
+
+  it("rotates around the element centre from the rotation handle", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const c = new InputController({ ...deps, hitTest: () => el.id });
+    c.pointerDown({ ...basePointer, x: 50, y: 50 });
+    c.pointerUp({ ...basePointer, x: 50, y: 50 });
+
+    c.pointerDown({ ...basePointer, x: 50, y: -22 });
+    expect(c.state).toBe("rotating");
+
+    c.pointerMove({ ...basePointer, x: 150, y: 50 });
+    c.pointerUp({ ...basePointer, x: 150, y: 50 });
+
+    expect(deps.scene.get(el.id)?.angle).toBeCloseTo(Math.PI / 2, 6);
+  });
+
+  it("commits a rotation even if the pointer has not moved", () => {
+    const deps = makeDeps();
+    const el = { ...createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V"), angle: 0.4 };
+    deps.scene.add(el);
+
+    const c = new InputController({ ...deps, hitTest: () => el.id });
+    c.pointerDown({ ...basePointer, x: 50, y: 50 });
+    c.pointerUp({ ...basePointer, x: 50, y: 50 });
+
+    const handle = { x: 50 + Math.sin(0.4) * 72, y: 50 - Math.cos(0.4) * 72 };
+    c.pointerDown({ ...basePointer, ...handle });
+    c.pointerUp({ ...basePointer, ...handle });
+
+    expect(deps.scene.get(el.id)?.angle).toBeCloseTo(0.4, 6);
+  });
+
+  it("restores the element when a transform is cancelled", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const c = new InputController({ ...deps, hitTest: () => el.id });
+    c.pointerDown({ ...basePointer, x: 50, y: 50 });
+    c.pointerUp({ ...basePointer, x: 50, y: 50 });
+
+    c.pointerDown({ ...basePointer, x: 100, y: 100 });
+    c.pointerMove({ ...basePointer, x: 300, y: 300 });
+    c.pointerCancel();
+
+    expect(deps.scene.get(el.id)).toMatchObject({ width: 100, height: 100 });
+    expect(c.state).toBe("idle");
+  });
+
+  it("marquee-selects every element the box touches", () => {
+    const deps = makeDeps();
+    const inside = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    const faraway = createElement("rectangle", { x: 400, y: 400, width: 100, height: 100 }, "W");
+    deps.scene.add(inside);
+    deps.scene.add(faraway);
+
+    const c = new InputController({ ...deps, hitTest: () => null });
+    c.pointerDown({ ...basePointer, x: -10, y: -10 });
+    expect(c.state).toBe("selecting");
+
+    c.pointerMove({ ...basePointer, x: 150, y: 150 });
+    expect(c.marquee).toMatchObject({ x: -10, y: -10, width: 160, height: 160 });
+
+    c.pointerUp({ ...basePointer, x: 150, y: 150 });
+
+    expect(c.selection).toEqual([inside.id]);
+    expect(c.marquee).toBeNull();
+  });
+
+  it("toggles with shift-click", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const c = new InputController({ ...deps, hitTest: () => el.id });
+    c.pointerDown({ ...basePointer, x: 50, y: 50 });
+    c.pointerUp({ ...basePointer, x: 50, y: 50 });
+    expect(c.selection).toEqual([el.id]);
+
+    c.pointerDown({ ...basePointer, x: 50, y: 50, shift: true });
+    c.pointerUp({ ...basePointer, x: 50, y: 50, shift: true });
+    expect(c.selection).toEqual([]);
+
+    c.pointerDown({ ...basePointer, x: 50, y: 50, shift: true });
+    c.pointerUp({ ...basePointer, x: 50, y: 50, shift: true });
+    expect(c.selection).toEqual([el.id]);
+  });
 });

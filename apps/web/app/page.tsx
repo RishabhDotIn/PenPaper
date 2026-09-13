@@ -48,6 +48,18 @@ export default function BoardPage() {
     for (const el of scene.ordered()) tree.insert(el.id, elementBounds(el));
   }, []);
 
+  /**
+   * The controller owns selection state; the renderer only knows how to paint
+   * it. Pushing it across explicitly keeps that ownership one-directional.
+   */
+  const syncOverlays = useCallback(() => {
+    const controller = controllerRef.current;
+    const renderer = rendererRef.current;
+    if (!controller || !renderer) return;
+    renderer.setSelection(controller.selectedElements);
+    renderer.setMarquee(controller.marquee);
+  }, []);
+
   const handleReady = useCallback(
     (ctx: CanvasRenderingContext2D, size: SurfaceSize) => {
       const scene = sceneRef.current ?? new Scene();
@@ -76,12 +88,18 @@ export default function BoardPage() {
         camera: { x: 0, y: 0, zoom: 1 },
         hitTest: (point, tolerance) => hitTest(scene, tree, point, tolerance),
         onCameraChange: (camera) => renderer.setCamera(camera),
-        onRender: scheduleRender,
+        onRender: () => {
+          syncOverlays();
+          scheduleRender();
+        },
         onSceneChange: () => {
           reindex();
           scheduleRender();
         },
-        onSelectionChange: scheduleRender,
+        onSelectionChange: () => {
+          syncOverlays();
+          scheduleRender();
+        },
       });
 
       // Nothing to select until the toolbar exists, so start the pen.
@@ -91,7 +109,7 @@ export default function BoardPage() {
       reindex();
       scheduleRender();
     },
-    [reindex, scheduleRender],
+    [reindex, scheduleRender, syncOverlays],
   );
 
   const onPointerDown = useCallback((input: PointerInput) => {
