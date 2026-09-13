@@ -262,6 +262,30 @@ export class InputController {
     this.deps.onRender?.();
   }
 
+  /** Applies one style patch to every selected element, atomically. */
+  patchSelection(patch: Partial<Element>): void {
+    if (this.selected.size === 0) return;
+
+    for (const id of this.selected) {
+      const element = this.scene.get(id);
+      if (!element || element.isDeleted) continue;
+      this.scene.update(id, patch);
+    }
+
+    this.deps.onSceneChange?.();
+    this.deps.onSelectionChange?.(this.selection);
+    this.deps.onRender?.();
+  }
+
+  deleteSelection(): void {
+    if (this.selected.size === 0) return;
+
+    for (const id of this.selected) this.scene.remove(id);
+
+    this.setSelection([]);
+    this.deps.onSceneChange?.();
+  }
+
   private beginSelect(point: Point, input: PointerInput): void {
     const shift = input.shift;
 
