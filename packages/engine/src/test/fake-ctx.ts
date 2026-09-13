@@ -9,6 +9,8 @@
 export interface FakeContext extends CanvasRenderingContext2D {
   /** Method names called since creation, in order. */
   readonly calls: string[];
+  /** Method names with their arguments, for geometry assertions. */
+  readonly records: Array<{ readonly name: string; readonly args: readonly unknown[] }>;
   reset(): void;
 }
 
@@ -32,6 +34,7 @@ const VALUE_PROPERTIES = new Set([
 
 export function fakeCtx(): FakeContext {
   const calls: string[] = [];
+  const records: Array<{ name: string; args: readonly unknown[] }> = [];
   const values: Record<string, unknown> = {
     canvas: { width: 800, height: 600 },
   };
@@ -39,8 +42,10 @@ export function fakeCtx(): FakeContext {
   const target = {
     ...values,
     calls,
+    records,
     reset: () => {
       calls.length = 0;
+      records.length = 0;
     },
     measureText: (text: string) => ({ width: text.length * 8 }),
     getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
@@ -55,7 +60,7 @@ export function fakeCtx(): FakeContext {
       if (VALUE_PROPERTIES.has(prop)) return obj[prop];
       return (...args: unknown[]) => {
         calls.push(prop);
-        void args;
+        records.push({ name: prop, args });
         return undefined;
       };
     },

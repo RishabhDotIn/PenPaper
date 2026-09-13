@@ -1,11 +1,20 @@
+import type { Element } from "@penpaper/shared";
 import type { Scene } from "../scene/scene";
-import type { Camera } from "../math/camera";
+import { sceneToScreen, type Camera } from "../math/camera";
 import { boundsIntersect, elementBounds } from "../math/bounds";
 import { RoughCache } from "./rough-cache";
 import { drawElement } from "./shapes";
+import { drawMarquee, drawSelection } from "./selection-overlay";
 import { createStaticLayer, type StaticLayer } from "./static-layer";
 import { visibleBounds } from "./surface";
 import { lightTheme, type Theme } from "./theme";
+
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface RendererOptions {
   width: number;
@@ -41,6 +50,10 @@ export class Renderer {
   private dirty = true;
   private gridDirty = true;
   private frames: RenderStats = { drawn: 0, culled: 0, frameMs: 0 };
+
+  /** Selection overlay state, owned by the input controller. */
+  private selection: readonly Element[] = [];
+  private marqueeRect: Rect | null = null;
 
   constructor(
     private readonly ctx: CanvasRenderingContext2D,
@@ -97,6 +110,39 @@ export class Renderer {
     this.gridDirty = true;
   }
 
+  /**
+   * Selection is compared by reference: `Scene.update` returns fresh objects,
+   * so a drag invalidates the frame while a plain hover does not.
+   */
+  setSelection(elements: readonly Element[]): void {
+    if (
+      elements.length === this.selection.length &&
+      elements.every((element, index) => element === this.selection[index])
+    ) {
+      return;
+    }
+    this.selection = elements.slice();
+    this.dirty = true;
+  }
+
+  /** Marquee rectangle in scene coordinates, or null when not selecting. */
+  setMarquee(rect: Rect | null): void {
+    const current = this.marqueeRect;
+    if (
+      current === rect ||
+      (current &&
+        rect &&
+        current.x === rect.x &&
+        current.y === rect.y &&
+        current.width === rect.width &&
+        current.height === rect.height)
+    ) {
+      return;
+    }
+    this.marqueeRect = rect ? { ...rect } : null;
+    this.dirty = true;
+  }
+
   setSize(width: number, height: number, dpr = 1): void {
     if (this.options.width === width && this.options.height === height) return;
     this.options.width = width;
@@ -142,6 +188,18 @@ export class Renderer {
     }
 
     ctx.restore();
+
+    // Overlays live in screen space, so they are painted after the camera
+    // transform is popped.
+    drawSelection(ctx, this.selection, this.camera, theme);
+    if (this.marqueeRect) {
+      const from = sceneToScreen(this.camera, { x: this.marqueeRect.x, y: this.marqueeRect.y });
+      const to = sceneToScreen(this.camera, {
+        x: this.marqueeRect.x + this.marqueeRect.width,
+        y: this.marqueeRect.y + this.marqueeRect.height,
+      });
+      drawMarquee(ctx, from, to, theme);
+    }
 
     this.dirty = false;
     this.frames = { drawn, culled, frameMs: clock() - started };

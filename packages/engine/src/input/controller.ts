@@ -1,8 +1,11 @@
 import type { Element, Point } from "@penpaper/shared";
-import { panBy, screenToScene, zoomAt, type Camera } from "../math/camera";
+import { boundsIntersect, elementBounds } from "../math/bounds";
+import { panBy, sceneToScreen, screenToScene, zoomAt, type Camera } from "../math/camera";
 import { createElement } from "../scene/factory";
 import { indexBetween } from "../scene/fractional-index";
 import type { Scene } from "../scene/scene";
+import { getHandles, handleAt, type Handle } from "../selection/handles";
+import { resizeElement, rotateElement } from "../selection/transform";
 import { InteractionFSM, type InteractionState } from "./fsm";
 import { GestureArbiter } from "./gestures";
 import { PalmRejection } from "./palm";
@@ -47,6 +50,13 @@ export class InputController {
   private draft: Draft | null = null;
   private selected = new Set<string>();
 
+  /** Captured on pointer-down so every move is computed from the original. */
+  private transformStart: { element: Element; handle: Handle } | null = null;
+
+  private marqueeStart: Point | null = null;
+  private marqueeRect: { x: number; y: number; width: number; height: number } | null = null;
+  private marqueeAdditive = false;
+
   private lastScene: Point = { x: 0, y: 0 };
   private lastScreen: Point = { x: 0, y: 0 };
   private pinchLast: { distance: number; midpoint: Point } | null = null;
@@ -68,6 +78,17 @@ export class InputController {
     return [...this.selected];
   }
 
+  /** Live elements in paint order, which is what the overlay draws. */
+  get selectedElements(): Element[] {
+    if (this.selected.size === 0) return [];
+    return this.scene.ordered().filter((element) => this.selected.has(element.id));
+  }
+
+  /** Marquee in scene coordinates, or null when no box is being dragged. */
+  get marquee(): { x: number; y: number; width: number; height: number } | null {
+    return this.marqueeRect;
+  }
+
   getCamera(): Camera {
     return this.camera;
   }
@@ -75,6 +96,9 @@ export class InputController {
   setTool(tool: Tool): void {
     if (tool === this.tool) return;
     this.cancelStroke();
+    this.transformStart = null;
+    this.marqueeStart = null;
+    this.marqueeRect = null;
     this.tool = tool;
     this.fsm.reset();
   }
@@ -109,7 +133,7 @@ export class InputController {
         break;
 
       case "select":
-        this.beginSelect(point);
+        this.beginSelect(point, e);
         break;
 
       case "eraser":
@@ -154,6 +178,16 @@ export class InputController {
         this.translateSelection(sceneDelta, point);
         break;
 
+      case "resizing":
+      case "rotating":
+        this.applyTransform(point, e);
+        break;
+
+      case "selecting":
+        this.marqueeRect = this.marqueeStart ? boxFrom(this.marqueeStart, point) : null;
+        this.deps.onRender?.();
+        break;
+
       case "erasing":
         this.eraseAt(point);
         break;
@@ -175,17 +209,30 @@ export class InputController {
     this.pinchLast = null;
 
     if (this.fsm.state === "drawing") this.commitDraft();
-    if (this.fsm.state === "dragging") this.deps.onSceneChange?.();
+    if (this.fsm.state === "selecting") this.commitMarquee();
+    if (
+      this.fsm.state === "dragging" ||
+      this.fsm.state === "resizing" ||
+      this.fsm.state === "rotating"
+    ) {
+      this.deps.onSceneChange?.();
+    }
 
     this.draft = null;
+    this.transformStart = null;
+    this.marqueeStart = null;
+    this.marqueeRect = null;
     this.fsm.reset();
     this.deps.onRender?.();
   }
 
   pointerCancel(): void {
     this.cancelStroke();
+    this.cancelTransform();
     this.arbiter.reset();
     this.pinchLast = null;
+    this.marqueeStart = null;
+    this.marqueeRect = null;
     this.fsm.reset();
     this.deps.onRender?.();
   }
@@ -215,18 +262,114 @@ export class InputController {
     this.deps.onRender?.();
   }
 
-  private beginSelect(point: Point): void {
+  private beginSelect(point: Point, input: PointerInput): void {
+    const shift = input.shift;
+
+    // A handle belonging to the current single selection wins over the element
+    // underneath it: clicking the corner of a selected box must resize, not
+    // start dragging the box.
+    const current = this.selectedElements;
+    const only = current.length === 1 ? current[0] : undefined;
+
+    if (only) {
+      const screenPoint = sceneToScreen(this.camera, point);
+      // Fingers get a 44 px target; a mouse pointer does not need one.
+      const radius = input.type === "mouse" ? 8 : 22;
+      const handle = handleAt(getHandles(only, this.camera), screenPoint, radius);
+
+      if (handle) {
+        // The state machine only reaches a transform through `dragging`, which
+        // also makes "pointer up during a resize" a single handled path.
+        this.fsm.transition("dragging");
+        this.fsm.transition(handle === "rotation" ? "rotating" : "resizing");
+        this.transformStart = { element: only, handle };
+        this.deps.onRender?.();
+        return;
+      }
+    }
+
     const tolerance = DEFAULT_HIT_TOLERANCE / this.camera.zoom;
     const hit = this.deps.hitTest?.(point, tolerance) ?? null;
 
     if (hit) {
-      this.setSelection([hit]);
+      if (shift) {
+        const next = new Set(this.selected);
+        if (next.has(hit)) next.delete(hit);
+        else next.add(hit);
+        this.setSelection([...next]);
+      } else if (!this.selected.has(hit)) {
+        // Clicking an element that is already part of a multi-selection keeps
+        // the selection, so a group can be dragged as a unit.
+        this.setSelection([hit]);
+      }
+
       this.fsm.transition("dragging");
       return;
     }
 
-    this.setSelection([]);
+    if (!shift) this.setSelection([]);
+    this.marqueeAdditive = shift;
+    this.marqueeStart = point;
+    this.marqueeRect = null;
     this.fsm.transition("selecting");
+    this.deps.onRender?.();
+  }
+
+  private commitMarquee(): void {
+    const rect = this.marqueeRect;
+    if (!rect) return;
+
+    const ids = this.scene
+      .ordered()
+      .filter((element) => boundsIntersect(elementBounds(element), rect))
+      .map((element) => element.id);
+
+    if (this.marqueeAdditive) {
+      const merged = new Set(this.selected);
+      for (const id of ids) merged.add(id);
+      this.setSelection([...merged]);
+    } else {
+      this.setSelection(ids);
+    }
+  }
+
+  private applyTransform(point: Point, input: PointerInput): void {
+    const start = this.transformStart;
+    if (!start) return;
+
+    const element = this.scene.get(start.element.id);
+    if (!element) return;
+
+    const patch =
+      start.handle === "rotation"
+        ? rotateElement(start.element, point, { snap: input.shift })
+        : resizeElement(start.element, start.handle, point, {
+            keepAspect: input.shift,
+            fromCenter: input.alt,
+          });
+
+    if (Object.keys(patch).length === 0) return;
+
+    this.scene.update(element.id, patch);
+    this.deps.onRender?.();
+  }
+
+  private cancelTransform(): void {
+    const start = this.transformStart;
+    if (!start) return;
+
+    const element = this.scene.get(start.element.id);
+    if (element) {
+      this.scene.update(element.id, {
+        x: start.element.x,
+        y: start.element.y,
+        width: start.element.width,
+        height: start.element.height,
+        angle: start.element.angle,
+      });
+    }
+
+    this.transformStart = null;
   }
 
   private translateSelection(delta: Point, point: Point): void {

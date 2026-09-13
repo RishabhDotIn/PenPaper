@@ -36,11 +36,28 @@ export { hitTest, hitsElement } from "./math/hit-test";
 
 export { computeBackingSize, visibleBounds, type BackingSize } from "./render/surface";
 
-export { Renderer, type RendererOptions, type RenderStats } from "./render/renderer";
+export { Renderer, type RendererOptions, type RenderStats, type Rect } from "./render/renderer";
 export { RoughCache } from "./render/rough-cache";
 export { drawElement } from "./render/shapes";
+export { drawMarquee, drawSelection, type SelectionOverlayOptions } from "./render/selection-overlay";
 export { createStaticLayer, type StaticLayer } from "./render/static-layer";
 export { darkTheme, lightTheme, type Theme } from "./render/theme";
+
+export {
+  ROTATION_HANDLE_OFFSET,
+  getHandles,
+  handleAt,
+  isCornerHandle,
+  type Handle,
+  type HandlePoint,
+} from "./selection/handles";
+export {
+  normalizeAngle,
+  resizeElement,
+  rotateElement,
+  type ResizeOptions,
+  type RotateOptions,
+} from "./selection/transform";
 
 export { InputController, type ControllerDeps } from "./input/controller";
 export { InteractionFSM, type InteractionState } from "./input/fsm";
