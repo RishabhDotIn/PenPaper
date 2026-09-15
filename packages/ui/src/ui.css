@@ -34,6 +34,15 @@
   display: none;
 }
 
+/* On a phone the ten tools are wider than the screen. Fading the trailing
+   edge is the only affordance a scrollbar cannot provide on touch. */
+@media (max-width: 1023px) {
+  .pp-dock {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+}
+
 /* The plan's breakpoint: vertical dock on desktop, horizontal below. */
 @media (min-width: 1024px) {
   .pp-dock {
@@ -283,12 +292,12 @@
   display: flex;
   flex-direction: column;
   height: 62vh;
+  overflow: hidden;
 
   background: var(--island-bg);
   border-radius: 16px 16px 0 0;
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12);
-  transition: transform 260ms var(--ease-out);
-  will-change: transform;
+  transition: height 260ms var(--ease-out);
 }
 
 .pp-sheet-handle {

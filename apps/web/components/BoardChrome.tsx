@@ -46,7 +46,7 @@ export function BoardChrome({
 
       <div className="pp-properties-mobile">
         {selection.length > 0 ? (
-          <BottomSheet label="Style">
+          <BottomSheet label="Style" initialSnap="half">
             <PropertiesPanel selection={selection} onPatch={onPatch} onDelete={onDelete} />
           </BottomSheet>
         ) : null}

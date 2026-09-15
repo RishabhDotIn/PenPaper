@@ -20,19 +20,20 @@ export interface BottomSheetProps {
 
 const PEEK_HEIGHT = 72;
 
-function initialTransform(point: SnapPoint): string {
-  if (point === "full") return "translateY(0)";
-  if (point === "half") return "translateY(50%)";
-  return `translateY(calc(100% - ${PEEK_HEIGHT}px))`;
+/**
+ * Height, not transform.
+ *
+ * The sheet is anchored above the dock, so translating it would push its
+ * scroll area below the viewport and make the last controls unreachable.
+ * Resizing the box keeps the visible area equal to the scrollable area at every
+ * snap point, which is the only version that works with a long properties form.
+ */
+function initialHeight(point: SnapPoint): string {
+  if (point === "full") return "calc(100dvh - 60px - env(safe-area-inset-bottom))";
+  if (point === "half") return "50vh";
+  return `${PEEK_HEIGHT}px`;
 }
 
-/**
- * A drag-to-snap sheet for the properties panel on phones.
- *
- * The transform is written straight to the element during the drag, and React
- * state only changes when the sheet settles on a snap point. Re-rendering a
- * form on every pointer move is what makes mobile sheets feel sticky.
- */
 export function BottomSheet({
   children,
   snapPoints = ["peek", "half", "full"],
@@ -40,39 +41,42 @@ export function BottomSheet({
   label = "Style",
 }: BottomSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ startY: number; baseY: number; height: number; currentY: number } | null>(
-    null,
-  );
+  const dragRef = useRef<{ startY: number; baseHeight: number; height: number } | null>(null);
   const [snap, setSnap] = useState<SnapPoint>(initialSnap);
 
-  const offsetFor = useCallback(
-    (point: SnapPoint, height: number): number => {
-      if (point === "full") return 0;
-      if (point === "half") return height / 2;
-      return Math.max(0, height - PEEK_HEIGHT);
+  const maxHeight = useCallback((): number => {
+    const sheet = sheetRef.current;
+    if (!sheet) return 0;
+    // The sheet is bottom-anchored, so the y of its bottom edge is exactly the
+    // room available above it, whatever height it currently has.
+    return sheet.getBoundingClientRect().bottom;
+  }, []);
+
+  const heightFor = useCallback(
+    (point: SnapPoint): number => {
+      const max = maxHeight();
+      if (point === "peek") return Math.min(PEEK_HEIGHT, max);
+      if (point === "half") return Math.min(Math.round(window.innerHeight / 2), max);
+      return Math.max(PEEK_HEIGHT, max);
     },
-    [],
+    [maxHeight],
   );
 
   const apply = useCallback(
     (point: SnapPoint) => {
       const sheet = sheetRef.current;
       if (!sheet) return;
-      const height = sheet.getBoundingClientRect().height;
-      sheet.style.transform = `translateY(${offsetFor(point, height)}px)`;
+      sheet.style.height = `${heightFor(point)}px`;
     },
-    [offsetFor],
+    [heightFor],
   );
 
   useEffect(() => {
     apply(snap);
 
-    const sheet = sheetRef.current;
-    if (!sheet || typeof ResizeObserver === "undefined") return;
-
-    const observer = new ResizeObserver(() => apply(snap));
-    observer.observe(sheet);
-    return () => observer.disconnect();
+    const onResize = () => apply(snap);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, [apply, snap]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -81,9 +85,8 @@ export function BottomSheet({
 
     event.currentTarget.setPointerCapture(event.pointerId);
     const height = sheet.getBoundingClientRect().height;
-    const baseY = offsetFor(snap, height);
 
-    dragRef.current = { startY: event.clientY, baseY, height, currentY: baseY };
+    dragRef.current = { startY: event.clientY, baseHeight: height, height };
     sheet.style.transition = "none";
   };
 
@@ -92,13 +95,14 @@ export function BottomSheet({
     const sheet = sheetRef.current;
     if (!drag || !sheet) return;
 
+    // Down drags the sheet closed, so the delta is inverted.
     const next = Math.min(
-      Math.max(0, drag.baseY + event.clientY - drag.startY),
-      Math.max(0, drag.height - PEEK_HEIGHT),
+      Math.max(PEEK_HEIGHT, drag.baseHeight + (drag.startY - event.clientY)),
+      maxHeight(),
     );
 
-    drag.currentY = next;
-    sheet.style.transform = `translateY(${next}px)`;
+    drag.height = next;
+    sheet.style.height = `${next}px`;
   };
 
   const settle = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -115,18 +119,16 @@ export function BottomSheet({
     let best = Number.POSITIVE_INFINITY;
 
     for (const point of snapPoints) {
-      const distance = Math.abs(offsetFor(point, drag.height) - drag.currentY);
+      const distance = Math.abs(heightFor(point) - drag.height);
       if (distance < best) {
         best = distance;
         nearest = point;
       }
     }
 
-    // Restore the CSS transition so the settle animates; the effect applies
-    // the final position for the new state.
     sheet.style.transition = "";
     setSnap(nearest);
-    sheet.style.transform = `translateY(${offsetFor(nearest, drag.height)}px)`;
+    sheet.style.height = `${heightFor(nearest)}px`;
   };
 
   return (
@@ -138,7 +140,7 @@ export function BottomSheet({
       aria-label={label}
       role="dialog"
       aria-modal="false"
-      style={{ transform: initialTransform(initialSnap) }}
+      style={{ height: initialHeight(initialSnap) }}
     >
       <div
         className="pp-sheet-handle"
