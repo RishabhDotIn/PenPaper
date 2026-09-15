@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "@penpaper/ui/styles.css";
 
 export const metadata: Metadata = {
   title: "PenPaper — a whiteboard that keeps up with you",
