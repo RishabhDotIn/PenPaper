@@ -50,6 +50,21 @@ export class Scene {
     return this.elements.get(id);
   }
 
+  /**
+   * A shallow copy of the map, for history.
+   *
+   * Elements are treated as immutable values — every mutation replaces the
+   * object — so a snapshot costs one Map allocation, not a deep clone.
+   */
+  snapshot(): Map<string, Element> {
+    return new Map(this.elements);
+  }
+
+  /** Puts an exact element back, bypassing the version/updatedAt stamping. */
+  restore(element: Element): void {
+    this.elements.set(element.id, element);
+  }
+
   /** Live elements, back to front. */
   ordered(): Element[] {
     const live: Element[] = [];

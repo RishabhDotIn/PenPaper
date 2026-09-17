@@ -1,6 +1,7 @@
 import type { Element, Point } from "@penpaper/shared";
 import { boundsIntersect, elementBounds } from "../math/bounds";
 import { panBy, sceneToScreen, screenToScene, zoomAt, type Camera } from "../math/camera";
+import { type History } from "../history/history";
 import { createElement } from "../scene/factory";
 import { indexBetween } from "../scene/fractional-index";
 import type { Scene } from "../scene/scene";
@@ -24,6 +25,8 @@ export interface ControllerDeps {
   onRender?(): void;
   /** Fired when a text element is created and needs an editing overlay. */
   onCreateText?(element: Element): void;
+  /** Undo/redo target. Omitted in tests that do not care about history. */
+  history?: History;
 }
 
 const DEFAULT_CAMERA: Camera = { x: 0, y: 0, zoom: 1 };
@@ -137,6 +140,7 @@ export class InputController {
         break;
 
       case "eraser":
+        this.deps.history?.begin("erase");
         this.fsm.transition("erasing");
         this.eraseAt(point);
         break;
@@ -213,8 +217,10 @@ export class InputController {
     if (
       this.fsm.state === "dragging" ||
       this.fsm.state === "resizing" ||
-      this.fsm.state === "rotating"
+      this.fsm.state === "rotating" ||
+      this.fsm.state === "erasing"
     ) {
+      this.deps.history?.commit();
       this.deps.onSceneChange?.();
     }
 
@@ -229,6 +235,7 @@ export class InputController {
   pointerCancel(): void {
     this.cancelStroke();
     this.cancelTransform();
+    this.deps.history?.cancel();
     this.arbiter.reset();
     this.pinchLast = null;
     this.marqueeStart = null;
@@ -266,11 +273,13 @@ export class InputController {
   patchSelection(patch: Partial<Element>): void {
     if (this.selected.size === 0) return;
 
+    this.deps.history?.begin("style");
     for (const id of this.selected) {
       const element = this.scene.get(id);
       if (!element || element.isDeleted) continue;
       this.scene.update(id, patch);
     }
+    this.deps.history?.commit();
 
     this.deps.onSceneChange?.();
     this.deps.onSelectionChange?.(this.selection);
@@ -280,7 +289,9 @@ export class InputController {
   deleteSelection(): void {
     if (this.selected.size === 0) return;
 
+    this.deps.history?.begin("delete");
     for (const id of this.selected) this.scene.remove(id);
+    this.deps.history?.commit();
 
     this.setSelection([]);
     this.deps.onSceneChange?.();
@@ -304,6 +315,7 @@ export class InputController {
       if (handle) {
         // The state machine only reaches a transform through `dragging`, which
         // also makes "pointer up during a resize" a single handled path.
+        this.deps.history?.begin(handle === "rotation" ? "rotate" : "resize");
         this.fsm.transition("dragging");
         this.fsm.transition(handle === "rotation" ? "rotating" : "resizing");
         this.transformStart = { element: only, handle };
@@ -327,6 +339,7 @@ export class InputController {
         this.setSelection([hit]);
       }
 
+      this.deps.history?.begin("move");
       this.fsm.transition("dragging");
       return;
     }
@@ -420,6 +433,7 @@ export class InputController {
   private beginDraw(point: Point, pressure: number): void {
     const type = this.tool as Element["type"];
     const element = createElement(type, { x: point.x, y: point.y, width: 0, height: 0 }, this.topIndex());
+    this.deps.history?.begin("draw");
 
     if (type === "freedraw") {
       element.points = [[0, 0, pressure]];
@@ -517,24 +531,28 @@ export class InputController {
     }
 
     this.draft = null;
+    this.deps.history?.commit();
   }
 
   private cancelStroke(): void {
     if (this.draft && this.fsm.state === "drawing") {
       this.scene.remove(this.draft.id);
       this.draft = null;
+      this.deps.history?.cancel();
     }
   }
 
   // ------------------------------------------------------------------- text
 
   private beginText(point: Point): void {
+    this.deps.history?.begin("text");
     const element = createElement("text", { x: point.x, y: point.y, width: 200, height: 28 }, this.topIndex());
     this.scene.add(element);
     this.setSelection([element.id]);
     this.fsm.transition("editingText");
     this.deps.onCreateText?.(element);
     this.deps.onSceneChange?.();
+    this.deps.history?.commit();
   }
 
   // ----------------------------------------------------------------- eraser

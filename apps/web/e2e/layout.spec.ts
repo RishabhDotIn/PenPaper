@@ -73,4 +73,38 @@ test.describe("responsive chrome", () => {
       "1 rectangle",
     );
   });
+
+  test("one drag is one undo step", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/b/local");
+    await expect(page.locator("main[data-ready='true']")).toBeVisible();
+
+    await page.getByTestId("tool-button").nth(2).click();
+
+    const box = await page.getByRole("application").boundingBox();
+    expect(box).not.toBeNull();
+
+    // Many samples, one gesture. Undo must take the rectangle away entirely
+    // rather than rewind the last pointer move.
+    await page.mouse.move(box!.x + 200, box!.y + 200);
+    await page.mouse.down();
+    for (let i = 1; i <= 20; i += 1) {
+      await page.mouse.move(box!.x + 200 + i * 6, box!.y + 200 + i * 4);
+    }
+    await page.mouse.up();
+
+    const panel = page.locator(".pp-properties-desktop").getByTestId("properties-panel");
+    await expect(panel).toContainText("1 rectangle");
+
+    await page.keyboard.press("Control+z");
+    await expect(panel).toContainText("Nothing selected");
+
+    await page.keyboard.press("Control+Shift+z");
+
+    // Redo restores the element but deliberately not the selection, so pick it
+    // up again to prove it is actually back on the canvas.
+    await page.getByTestId("tool-button").nth(1).click();
+    await page.mouse.click(box!.x + 260, box!.y + 240);
+    await expect(panel).toContainText("1 rectangle");
+  });
 });

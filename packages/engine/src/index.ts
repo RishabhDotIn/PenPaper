@@ -11,6 +11,9 @@ export { Scene } from "./scene/scene";
 export { createElement } from "./scene/factory";
 export { indexBetween } from "./scene/fractional-index";
 
+export { History } from "./history/history";
+export { addCommand, removeCommand, type Command } from "./history/commands";
+
 export {
   MAX_ZOOM,
   MIN_ZOOM,

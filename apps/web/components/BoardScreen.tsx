@@ -3,6 +3,7 @@
 import { BoardChrome } from "@/components/BoardChrome";
 import { BoardSurface, type SurfaceSize } from "@/components/BoardSurface";
 import {
+  History,
   InputController,
   Quadtree,
   Renderer,
@@ -37,6 +38,7 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
   const sceneRef = useRef<Scene | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const controllerRef = useRef<InputController | null>(null);
+  const historyRef = useRef<History | null>(null);
   const treeRef = useRef<Quadtree | null>(null);
   const frameRef = useRef(0);
 
@@ -84,6 +86,9 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
       const scene = sceneRef.current ?? new Scene();
       sceneRef.current = scene;
 
+      const history = historyRef.current ?? new History(scene);
+      historyRef.current = history;
+
       const tree = treeRef.current ?? new Quadtree(WORLD);
       treeRef.current = tree;
 
@@ -105,6 +110,7 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
       const controller = new InputController({
         scene,
         camera: { x: 0, y: 0, zoom: 1 },
+        history,
         hitTest: (point, tolerance) => hitTest(scene, tree, point, tolerance),
         onCameraChange: (camera) => renderer.setCamera(camera),
         onRender: () => {
@@ -142,6 +148,28 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
     controllerRef.current?.deleteSelection();
   }, []);
 
+  /**
+   * Undo can tombstone or resurrect elements, so the spatial index and the
+   * selection both have to be recomputed. The selection is pruned through the
+   * controller so the properties panel never edits a deleted element.
+   */
+  const afterHistory = useCallback(() => {
+    reindex();
+    const controller = controllerRef.current;
+    if (controller) {
+      controller.setSelection(controller.selectedElements.map((element) => element.id));
+    }
+    scheduleRender();
+  }, [reindex, scheduleRender]);
+
+  const undo = useCallback(() => {
+    if (historyRef.current?.undo()) afterHistory();
+  }, [afterHistory]);
+
+  const redo = useCallback(() => {
+    if (historyRef.current?.redo()) afterHistory();
+  }, [afterHistory]);
+
   // A phone opens with the pen: "select" on a blank board is a dead tap.
   useEffect(() => {
     if (window.matchMedia("(pointer: coarse)").matches) changeTool("freedraw");
@@ -164,9 +192,26 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
       ) {
         return;
       }
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       const key = event.key.toLowerCase();
+
+      if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+        if (key === "z") {
+          event.preventDefault();
+          if (event.shiftKey) redo();
+          else undo();
+          return;
+        }
+        // Ctrl+Y is the Windows convention; the app supports both.
+        if (key === "y") {
+          event.preventDefault();
+          redo();
+          return;
+        }
+      }
+
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
       const nextTool = TOOL_SHORTCUTS[key];
       if (nextTool) {
         event.preventDefault();
@@ -186,7 +231,7 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [changeTool, deleteSelection]);
+  }, [changeTool, deleteSelection, redo, undo]);
 
   const onPointerDown = useCallback((input: PointerInput) => {
     controllerRef.current?.pointerDown(input);

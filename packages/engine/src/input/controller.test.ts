@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Scene } from "../scene/scene";
 import { createElement } from "../scene/factory";
+import { History } from "../history/history";
 import { InputController } from "./controller";
 import type { PointerInput } from "./pointer";
 
@@ -279,5 +280,88 @@ describe("InputController", () => {
     c.pointerDown({ ...basePointer, x: 50, y: 50, shift: true });
     c.pointerUp({ ...basePointer, x: 50, y: 50, shift: true });
     expect(c.selection).toEqual([el.id]);
+  });
+});
+
+describe("InputController history", () => {
+  /**
+   * A gesture is one undo step no matter how many pointer samples it emitted.
+   * That is the whole contract the controller has with `History`; individual
+   * command shapes are covered in `history.test.ts`.
+   */
+  it("undoes a whole drawing gesture and redoes it", () => {
+    const deps = makeDeps();
+    const history = new History(deps.scene);
+    const c = new InputController({ ...deps, history });
+    c.setTool("rectangle");
+
+    c.pointerDown({ ...basePointer, x: 100, y: 100 });
+    c.pointerMove({ ...basePointer, x: 150, y: 150 });
+    c.pointerMove({ ...basePointer, x: 200, y: 200 });
+    c.pointerUp({ ...basePointer, x: 200, y: 200 });
+
+    expect(deps.scene.size).toBe(1);
+    expect(history.undo()).toBe(true);
+    expect(deps.scene.size).toBe(0);
+    expect(history.redo()).toBe(true);
+    expect(deps.scene.size).toBe(1);
+  });
+
+  it("undoes a drag as one step", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const history = new History(deps.scene);
+    const c = new InputController({ ...deps, history, hitTest: () => el.id });
+
+    // Click selects; the drag is what moves it.
+    c.pointerDown({ ...basePointer, x: 50, y: 50 });
+    c.pointerUp({ ...basePointer, x: 50, y: 50 });
+
+    c.pointerDown({ ...basePointer, x: 50, y: 50 });
+    for (let i = 1; i <= 10; i += 1) {
+      c.pointerMove({ ...basePointer, x: 50 + i * 10, y: 50 });
+    }
+    c.pointerUp({ ...basePointer, x: 150, y: 50 });
+
+    expect(deps.scene.get(el.id)?.x).toBeCloseTo(100, 6);
+
+    expect(history.undo()).toBe(true);
+    expect(deps.scene.get(el.id)?.x).toBe(0);
+    expect(history.canUndo()).toBe(false);
+  });
+
+  it("undoes a style patch", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const history = new History(deps.scene);
+    const c = new InputController({ ...deps, history });
+    c.setSelection([el.id]);
+
+    c.patchSelection({ strokeColor: "#ff0000" });
+    expect(deps.scene.get(el.id)?.strokeColor).toBe("#ff0000");
+
+    history.undo();
+    expect(deps.scene.get(el.id)?.strokeColor).toBe(el.strokeColor);
+  });
+
+  it("undoes a delete and restores the element", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const history = new History(deps.scene);
+    const c = new InputController({ ...deps, history });
+    c.setSelection([el.id]);
+
+    c.deleteSelection();
+    expect(deps.scene.size).toBe(0);
+
+    history.undo();
+    expect(deps.scene.size).toBe(1);
+    expect(deps.scene.get(el.id)?.isDeleted).toBe(false);
   });
 });
