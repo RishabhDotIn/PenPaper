@@ -15,6 +15,13 @@ export { History } from "./history/history";
 export { addCommand, removeCommand, type Command } from "./history/commands";
 
 export {
+  SCENE_VERSION,
+  deserializeScene,
+  serializeScene,
+  type SceneSnapshot,
+} from "./serialize";
+
+export {
   MAX_ZOOM,
   MIN_ZOOM,
   clampZoom,
