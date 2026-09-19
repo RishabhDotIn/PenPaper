@@ -12,10 +12,12 @@ import {
   Renderer,
   Scene,
   TOOL_SHORTCUTS,
+  createElement,
   darkTheme,
   elementBounds,
   hitTest,
   lightTheme,
+  screenToScene,
   type Camera,
   type PointerInput,
   type Tool,
@@ -363,6 +365,95 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   const onWheel = useCallback((input: WheelInput) => {
     controllerRef.current?.wheel(input);
   }, []);
+
+  /**
+   * Dev-only seam for the performance gate.
+   *
+   * Production builds return before touching `window`, so the seeded board and
+   * the timing shim cannot be reached from a real deployment. The measurement
+   * is the renderer's own frame body (layout + cull + paint commands), not the
+   * rAF interval: rAF is clamped to the display refresh rate and would report
+   * ~16.7 ms even on a board that takes 200 ms to build.
+   */
+  useEffect(() => {
+    if (
+      process.env.NODE_ENV === "production" &&
+      process.env.NEXT_PUBLIC_E2E !== "1"
+    ) {
+      return;
+    }
+    if (!ready) return;
+
+    const scene = sceneRef.current;
+    const renderer = rendererRef.current;
+    const controller = controllerRef.current;
+    if (!scene || !renderer || !controller) return;
+
+    const seeded: string[] = [];
+    const perf = { medianFrameMs: Number.POSITIVE_INFINITY, seeded: 0 };
+    window.__perf = perf;
+
+    window.__seedPerfBoard = (count = 1000) => {
+      for (const id of seeded) {
+        if (scene.get(id)) scene.remove(id);
+      }
+      seeded.length = 0;
+
+      const camera = controller.getCamera();
+      const start = screenToScene(camera, { x: 24, y: 24 });
+      const stepX = 32 / camera.zoom;
+      const stepY = 28 / camera.zoom;
+      const columns = 40;
+      const palette = ["#1e1e1e", "#e03131", "#2f9e44", "#1971c2", "#9c36b5"];
+      const types = ["rectangle", "ellipse", "diamond"] as const;
+
+      for (let index = 0; index < count; index += 1) {
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const element = createElement(
+          types[index % types.length]!,
+          {
+            x: start.x + column * stepX,
+            y: start.y + row * stepY,
+            width: 22 / camera.zoom,
+            height: 18 / camera.zoom,
+          },
+          `seed-${String(index).padStart(6, "0")}`,
+        );
+
+        scene.add({
+          ...element,
+          strokeColor: palette[index % palette.length]!,
+          roughness: index % 5 === 0 ? 2 : 1,
+          angle: index % 13 === 0 ? 0.08 : 0,
+          backgroundColor: index % 7 === 0 ? "#ffec99" : "transparent",
+          fillStyle: index % 7 === 0 ? "hachure" : "solid",
+        });
+        seeded.push(element.id);
+      }
+
+      reindex();
+      refreshStats();
+      renderer.markDirty();
+      renderer.render(); // warm the rough cache before timing
+
+      const samples: number[] = [];
+      for (let sample = 0; sample < 15; sample += 1) {
+        renderer.markDirty();
+        samples.push(renderer.render().frameMs);
+      }
+
+      samples.sort((a, b) => a - b);
+      perf.medianFrameMs = samples[Math.floor(samples.length / 2)] ?? Number.POSITIVE_INFINITY;
+      perf.seeded = seeded.length;
+      return perf.medianFrameMs;
+    };
+
+    return () => {
+      delete window.__seedPerfBoard;
+      delete window.__perf;
+    };
+  }, [ready, refreshStats, reindex]);
 
   const editingElement = editingId ? sceneRef.current?.get(editingId) : undefined;
 
