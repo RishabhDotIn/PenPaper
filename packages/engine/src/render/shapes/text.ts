@@ -1,54 +1,9 @@
-import type { Element, FontFamily } from "@penpaper/shared";
+import type { Element } from "@penpaper/shared";
+import { textFont, wrapText, type Measure } from "../../text/measure";
 
-export const FONT_STACKS: Record<FontFamily, string> = {
-  excalifont: "Excalifont, Segoe Print, Comic Sans MS, cursive",
-  nunito: "Nunito, system-ui, sans-serif",
-  mono: "ui-monospace, SFMono-Regular, Menlo, monospace",
-};
-
-export const MIN_TEXT_WIDTH = 24;
-
-export type Measure = (text: string, font: string) => number;
-
-/**
- * Greedy word wrap. Deliberately not a layout engine: it cannot break inside a
- * long word, which is why the text tool also resizes the box instead of
- * clipping.
- */
-export function wrapText(
-  text: string,
-  maxWidth: number,
-  font: string,
-  measure: Measure,
-): string[] {
-  const lines: string[] = [];
-  const width = Math.max(MIN_TEXT_WIDTH, maxWidth);
-
-  for (const paragraph of text.split("\n")) {
-    if (paragraph === "") {
-      lines.push("");
-      continue;
-    }
-
-    let current = "";
-    for (const word of paragraph.split(/\s+/)) {
-      const candidate = current === "" ? word : `${current} ${word}`;
-      if (current === "" || measure(candidate, font) <= width) {
-        current = candidate;
-      } else {
-        lines.push(current);
-        current = word;
-      }
-    }
-    if (current !== "") lines.push(current);
-  }
-
-  return lines;
-}
-
-export function textFont(el: Element): string {
-  return `${el.fontSize}px ${FONT_STACKS[el.fontFamily]}`;
-}
+// Layout lives in `text/measure.ts`; re-exported here so the shape module stays
+// the one import a renderer needs.
+export { FONT_STACKS, MIN_TEXT_WIDTH, textFont, wrapText, type Measure } from "../../text/measure";
 
 export function drawText(
   ctx: CanvasRenderingContext2D,

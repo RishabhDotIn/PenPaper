@@ -2,6 +2,7 @@ import type { Element, Point } from "@penpaper/shared";
 import { boundsIntersect, elementBounds } from "../math/bounds";
 import { panBy, sceneToScreen, screenToScene, zoomAt, type Camera } from "../math/camera";
 import { type History } from "../history/history";
+import { textHeight } from "../text/measure";
 import { createElement } from "../scene/factory";
 import { indexBetween } from "../scene/fractional-index";
 import type { Scene } from "../scene/scene";
@@ -295,6 +296,39 @@ export class InputController {
 
     this.setSelection([]);
     this.deps.onSceneChange?.();
+  }
+
+  /**
+   * Commits text typed in the DOM overlay.
+   *
+   * The browser owns keystrokes, IME, and selection while an element is being
+   * edited; the scene is updated once, as a single transaction, when editing
+   * ends. An element left empty is deleted rather than persisted as a blank
+   * box that can never be selected again.
+   */
+  setText(id: string, text: string): void {
+    const element = this.scene.get(id);
+    if (!element || element.type !== "text") return;
+    // An unchanged non-empty value is a no-op; an unchanged *empty* value still
+    // has to fall through so a text box dismissed before typing disappears.
+    if (text === element.text && text.trim() !== "") return;
+
+    this.deps.history?.begin("text");
+
+    if (text.trim() === "") {
+      this.scene.remove(id);
+      this.setSelection([]);
+    } else {
+      // The renderer wraps with real canvas metrics; this estimate is close
+      // enough to size the box without a second measuring pass per keystroke.
+      const height = textHeight({ ...element, text });
+      this.scene.update(id, { text, height });
+      this.setSelection([id]);
+    }
+
+    this.deps.history?.commit();
+    this.deps.onSceneChange?.();
+    this.deps.onRender?.();
   }
 
   private beginSelect(point: Point, input: PointerInput): void {

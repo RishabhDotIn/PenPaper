@@ -54,6 +54,17 @@ export { createStaticLayer, type StaticLayer } from "./render/static-layer";
 export { darkTheme, lightTheme, type Theme } from "./render/theme";
 
 export {
+  FONT_STACKS,
+  MIN_TEXT_WIDTH,
+  estimateMeasure,
+  textFont,
+  textHeight,
+  textLineCount,
+  wrapText,
+  type Measure,
+} from "./text/measure";
+
+export {
   ROTATION_HANDLE_OFFSET,
   getHandles,
   handleAt,

@@ -365,3 +365,58 @@ describe("InputController history", () => {
     expect(deps.scene.get(el.id)?.isDeleted).toBe(false);
   });
 });
+
+describe("InputController text", () => {
+  function beginEditing() {
+    const deps = makeDeps();
+    const history = new History(deps.scene);
+    const onCreateText = vi.fn();
+    const c = new InputController({ ...deps, history, onCreateText });
+    c.setTool("text");
+    c.pointerDown({ ...basePointer, x: 10, y: 10 });
+
+    const id = c.selection[0];
+    if (!id) throw new Error("text tool did not create an element");
+    return { deps, history, c, id, onCreateText };
+  }
+
+  it("asks the shell for an overlay as soon as the element exists", () => {
+    const { onCreateText, id } = beginEditing();
+    expect(onCreateText).toHaveBeenCalledTimes(1);
+    expect(onCreateText.mock.calls[0]?.[0]).toMatchObject({ id, type: "text", text: "" });
+  });
+
+  it("commits typed text as one undo step and grows the box", () => {
+    const { deps, history, c, id } = beginEditing();
+
+    c.setText(id, "first line\nsecond line");
+
+    const element = deps.scene.get(id)!;
+    expect(element.text).toBe("first line\nsecond line");
+    expect(element.height).toBeGreaterThan(28);
+
+    history.undo();
+    expect(deps.scene.get(id)?.text).toBe("");
+  });
+
+  it("deletes an element left empty", () => {
+    const { deps, c, id } = beginEditing();
+
+    c.setText(id, "   ");
+
+    expect(deps.scene.size).toBe(0);
+    expect(c.selection).toEqual([]);
+  });
+
+  it("ignores a commit that changes nothing", () => {
+    const { deps, history, c, id } = beginEditing();
+
+    c.setText(id, "hello");
+    c.setText(id, "hello");
+
+    // One undo returns to the empty box: the repeated commit added no step.
+    history.undo();
+    expect(deps.scene.get(id)?.text).toBe("");
+    expect(deps.scene.size).toBe(1);
+  });
+});

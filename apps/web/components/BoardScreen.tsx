@@ -2,6 +2,7 @@
 
 import { BoardChrome } from "@/components/BoardChrome";
 import { BoardSurface, type SurfaceSize } from "@/components/BoardSurface";
+import { TextEditorOverlay } from "@/components/TextEditorOverlay";
 import { saveBoard, type BoardSnapshot } from "@/lib/storage";
 import { useBoardStore } from "@/store/board-store";
 import {
@@ -61,6 +62,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   const [tool, setTool] = useState<Tool>("select");
   const [selection, setSelection] = useState<Element[]>([]);
   const [elementCount, setElementCount] = useState(initial?.elements.length ?? 0);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const toolRef = useRef<Tool>("select");
 
@@ -210,6 +212,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
           scheduleRender();
         },
         onSelectionChange: refreshSelection,
+        onCreateText: (element) => setEditingId(element.id),
       });
 
       controller.setTool(toolRef.current);
@@ -361,6 +364,8 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     controllerRef.current?.wheel(input);
   }, []);
 
+  const editingElement = editingId ? sceneRef.current?.get(editingId) : undefined;
+
   return (
     <main
       className="relative h-[100dvh] w-full overflow-hidden"
@@ -377,6 +382,18 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
         onPointerCancel={onPointerCancel}
         onWheel={onWheel}
       />
+
+      {editingElement ? (
+        <TextEditorOverlay
+          element={editingElement}
+          camera={controllerRef.current?.getCamera() ?? IDENTITY_CAMERA}
+          onCommit={(text) => {
+            controllerRef.current?.setText(editingElement.id, text);
+            setEditingId(null);
+          }}
+          onCancel={() => setEditingId(null)}
+        />
+      ) : null}
 
       <BoardChrome
         tool={tool}
