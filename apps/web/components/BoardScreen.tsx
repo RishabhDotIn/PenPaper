@@ -2,6 +2,8 @@
 
 import { BoardChrome } from "@/components/BoardChrome";
 import { BoardSurface, type SurfaceSize } from "@/components/BoardSurface";
+import { saveBoard, type BoardSnapshot } from "@/lib/storage";
+import { useBoardStore } from "@/store/board-store";
 import {
   History,
   InputController,
@@ -13,6 +15,7 @@ import {
   elementBounds,
   hitTest,
   lightTheme,
+  type Camera,
   type PointerInput,
   type Tool,
   type WheelInput,
@@ -21,9 +24,20 @@ import type { Element } from "@penpaper/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const WORLD = { x: -1_000_000, y: -1_000_000, width: 2_000_000, height: 2_000_000 };
+const IDENTITY_CAMERA: Camera = { x: 0, y: 0, zoom: 1 };
+
+/** Long enough to coalesce a stroke, short enough to survive a tab crash. */
+const SAVE_DEBOUNCE_MS = 500;
+
+export interface BoardInitialState {
+  elements: Element[];
+  camera: Camera;
+}
 
 export interface BoardScreenProps {
   boardId: string;
+  /** Hydrated from IndexedDB before this component mounts. */
+  initial?: BoardInitialState | null;
 }
 
 /**
@@ -34,16 +48,19 @@ export interface BoardScreenProps {
  * in React state, so a board with thousands of shapes does not produce
  * thousands of re-renders while drawing.
  */
-export function BoardScreen({ boardId }: BoardScreenProps) {
+export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   const sceneRef = useRef<Scene | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const controllerRef = useRef<InputController | null>(null);
   const historyRef = useRef<History | null>(null);
   const treeRef = useRef<Quadtree | null>(null);
   const frameRef = useRef(0);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dirtyRef = useRef(false);
 
   const [tool, setTool] = useState<Tool>("select");
   const [selection, setSelection] = useState<Element[]>([]);
+  const [elementCount, setElementCount] = useState(initial?.elements.length ?? 0);
   const [ready, setReady] = useState(false);
   const toolRef = useRef<Tool>("select");
 
@@ -62,6 +79,62 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
     tree.clear();
     for (const el of scene.ordered()) tree.insert(el.id, elementBounds(el));
   }, []);
+
+  const refreshStats = useCallback(() => {
+    const count = sceneRef.current?.size ?? 0;
+    setElementCount(count);
+    useBoardStore.getState().setElementCount(count);
+  }, []);
+
+  const writeSnapshot = useCallback(async () => {
+    const scene = sceneRef.current;
+    const controller = controllerRef.current;
+    if (!scene || !controller) return;
+
+    const snapshot: BoardSnapshot = {
+      version: 1,
+      elements: scene.ordered(),
+      camera: controller.getCamera(),
+      savedAt: Date.now(),
+    };
+
+    try {
+      await saveBoard(boardId, snapshot);
+      useBoardStore.getState().markSaved(snapshot.savedAt);
+    } catch (error) {
+      // A board that cannot be written must still be usable. The next edit or
+      // an explicit flush retries; the visible chrome reports the problem.
+      dirtyRef.current = true;
+      useBoardStore.getState().setStatus("unavailable");
+      console.warn("PenPaper: could not save board locally", error);
+    }
+  }, [boardId]);
+
+  /**
+   * Debounced write: pointer-up and camera settles are the moments that matter,
+   * and IndexedDB writes on every frame would compete with rendering.
+   */
+  const scheduleSave = useCallback(() => {
+    dirtyRef.current = true;
+    if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
+
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      if (!dirtyRef.current) return;
+      dirtyRef.current = false;
+      void writeSnapshot();
+    }, SAVE_DEBOUNCE_MS);
+  }, [writeSnapshot]);
+
+  const flushSave = useCallback(() => {
+    if (saveTimerRef.current !== null) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (!dirtyRef.current) return;
+    dirtyRef.current = false;
+    void writeSnapshot();
+  }, [writeSnapshot]);
 
   /**
    * The controller owns selection state; the renderer only knows how to paint
@@ -83,7 +156,16 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
 
   const handleReady = useCallback(
     (ctx: CanvasRenderingContext2D, size: SurfaceSize) => {
+      const isFirstReady = sceneRef.current === null;
       const scene = sceneRef.current ?? new Scene();
+
+      // Hydration happens exactly once: `onReady` also fires on resize, and
+      // re-adding the saved elements would duplicate or clobber edits.
+      if (isFirstReady && initial) {
+        for (const element of initial.elements) {
+          if (!scene.get(element.id)) scene.add(element);
+        }
+      }
       sceneRef.current = scene;
 
       const history = historyRef.current ?? new History(scene);
@@ -99,8 +181,9 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
         return;
       }
 
+      const camera = initial?.camera ?? IDENTITY_CAMERA;
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const renderer = new Renderer(ctx, scene, { x: 0, y: 0, zoom: 1 }, {
+      const renderer = new Renderer(ctx, scene, camera, {
         width: size.width,
         height: size.height,
         theme: prefersDark ? darkTheme : lightTheme,
@@ -109,16 +192,21 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
 
       const controller = new InputController({
         scene,
-        camera: { x: 0, y: 0, zoom: 1 },
+        camera,
         history,
         hitTest: (point, tolerance) => hitTest(scene, tree, point, tolerance),
-        onCameraChange: (camera) => renderer.setCamera(camera),
+        onCameraChange: (next) => {
+          renderer.setCamera(next);
+          scheduleSave();
+        },
         onRender: () => {
           syncOverlays();
           scheduleRender();
         },
         onSceneChange: () => {
           reindex();
+          refreshStats();
+          scheduleSave();
           scheduleRender();
         },
         onSelectionChange: refreshSelection,
@@ -128,10 +216,11 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
       controllerRef.current = controller;
 
       reindex();
+      refreshStats();
       scheduleRender();
       setReady(true);
     },
-    [reindex, refreshSelection, scheduleRender, syncOverlays],
+    [initial, reindex, refreshSelection, refreshStats, scheduleRender, scheduleSave, syncOverlays],
   );
 
   const changeTool = useCallback((next: Tool) => {
@@ -149,9 +238,9 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
   }, []);
 
   /**
-   * Undo can tombstone or resurrect elements, so the spatial index and the
-   * selection both have to be recomputed. The selection is pruned through the
-   * controller so the properties panel never edits a deleted element.
+   * Undo can tombstone or resurrect elements, so the spatial index, the
+   * element count, and the selection all have to be recomputed. The selection
+   * is pruned through the controller so the panel never edits a deleted element.
    */
   const afterHistory = useCallback(() => {
     reindex();
@@ -159,8 +248,10 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
     if (controller) {
       controller.setSelection(controller.selectedElements.map((element) => element.id));
     }
+    refreshStats();
+    scheduleSave();
     scheduleRender();
-  }, [reindex, scheduleRender]);
+  }, [reindex, refreshStats, scheduleRender, scheduleSave]);
 
   const undo = useCallback(() => {
     if (historyRef.current?.undo()) afterHistory();
@@ -182,6 +273,23 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, []);
+
+  // A hidden tab may be closed without another chance to write, and iOS often
+  // kills backgrounded pages outright; flush while the document is still alive.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flushSave();
+    };
+
+    window.addEventListener("pagehide", flushSave);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pagehide", flushSave);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      flushSave();
+    };
+  }, [flushSave]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -258,6 +366,7 @@ export function BoardScreen({ boardId }: BoardScreenProps) {
       className="relative h-[100dvh] w-full overflow-hidden"
       data-board-id={boardId}
       data-ready={ready}
+      data-elements={elementCount}
       style={{ background: "var(--surface-lowest)" }}
     >
       <BoardSurface
