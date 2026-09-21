@@ -30,14 +30,25 @@ describe("drawSelection", () => {
     const firstMove = ctx.records.find((record) => record.name === "moveTo");
     expect(firstMove).toBeDefined();
 
-    // The first corner of the outline sits at (0, 0) before rotation and at
-    // (50, 50 - 50√2) after a 45° turn. An axis-aligned box would still start
-    // at (0, 0), so this is the assertion that catches a bounding-box overlay.
+    // The first corner of the outline sits 4 px outside (0, 0) before rotation
+    // and at (50, 50 - 54√2) after a 45° turn. An axis-aligned box would still
+    // start at (0, 0), so this is the assertion that catches a bounding-box
+    // overlay.
     const [x, y] = firstMove?.args ?? [];
     expect(x).toBeCloseTo(50, 6);
-    expect(y).toBeCloseTo(50 - 50 * Math.SQRT2, 6);
+    expect(y).toBeCloseTo(50 - 54 * Math.SQRT2, 6);
     expect(ctx.calls).toContain("closePath");
     expect(ctx.calls).not.toContain("strokeRect");
+  });
+
+  it("keeps the outline off a zero-height element so its stroke stays visible", () => {
+    const el = createElement("line", { x: 0, y: 0, width: 100, height: 0 }, "V");
+    const ctx = fakeCtx();
+
+    drawSelection(ctx, [el], CAMERA, lightTheme);
+
+    const firstMove = ctx.records.find((record) => record.name === "moveTo");
+    expect(firstMove?.args).toEqual([-4, -4]);
   });
 
   it("draws a group box without individual handles", () => {

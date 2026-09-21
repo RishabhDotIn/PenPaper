@@ -24,6 +24,27 @@ describe("Scene", () => {
     expect(after.updatedAt).toBeGreaterThanOrEqual(before.updatedAt);
   });
 
+  it("bumps revision on every mutation so painters can detect changes", () => {
+    const scene = new Scene();
+    const start = scene.revision;
+
+    const el = createElement("rectangle", { x: 0, y: 0, width: 10, height: 10 }, "V");
+    scene.add(el);
+    expect(scene.revision).toBeGreaterThan(start);
+
+    const added = scene.revision;
+    scene.update(el.id, { x: 50 });
+    expect(scene.revision).toBeGreaterThan(added);
+
+    const updated = scene.revision;
+    scene.remove(el.id);
+    expect(scene.revision).toBeGreaterThan(updated);
+
+    const removed = scene.revision;
+    scene.restore(el);
+    expect(scene.revision).toBeGreaterThan(removed);
+  });
+
   it("returns the union bounds of live elements, or null when empty", () => {
     const scene = new Scene();
     expect(scene.bounds()).toBeNull();

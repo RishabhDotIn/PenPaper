@@ -11,7 +11,14 @@ export interface SelectionOverlayOptions {
   color?: string;
 }
 
-const CORNERS = ["nw", "ne", "se", "sw"] as const;
+/**
+ * Pixels between the element and its selection outline.
+ *
+ * Without this gap the outline sits exactly on a thin stroke — a horizontal
+ * freedraw or a straight arrow — and the 1 px selection line hides the very
+ * thing the user just drew. Excalidraw leaves the same visual breathing room.
+ */
+export const SELECTION_PADDING = 4;
 
 /**
  * Drawn in screen space, after the camera transform has been popped.
@@ -55,16 +62,32 @@ function drawSingle(
   const handles = getHandles(el, camera, handleSize);
   const byName = new Map(handles.map((entry) => [entry.handle, entry.point] as const));
 
-  const corners = CORNERS.map((name) => byName.get(name));
-  const first = corners[0];
+  // The outline is drawn on a padded box rather than through the handles, so a
+  // thin element is still visible while it is selected.
+  const centre = sceneToScreen(camera, { x: el.x + el.width / 2, y: el.y + el.height / 2 });
+  const halfW = (el.width / 2) * camera.zoom + SELECTION_PADDING;
+  const halfH = (el.height / 2) * camera.zoom + SELECTION_PADDING;
+  const cos = Math.cos(el.angle);
+  const sin = Math.sin(el.angle);
+
+  const corners = ([
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ] as const).map(([sx, sy]) => ({
+    x: centre.x + sx * halfW * cos - sy * halfH * sin,
+    y: centre.y + sx * halfW * sin + sy * halfH * cos,
+  }));
 
   // The outline follows the element's rotation; an axis-aligned box around a
   // rotated rectangle puts its edges in the wrong place and makes the corner
   // handles look detached from it.
-  if (first && corners.every(Boolean)) {
+  const first = corners[0];
+  if (first) {
     ctx.beginPath();
     ctx.moveTo(first.x, first.y);
-    for (const corner of corners.slice(1)) ctx.lineTo(corner!.x, corner!.y);
+    for (const corner of corners.slice(1)) ctx.lineTo(corner.x, corner.y);
     ctx.closePath();
     ctx.stroke();
   }

@@ -32,17 +32,37 @@ export function freedrawOutline(
   });
 }
 
+const midpoint = (a: readonly number[], b: readonly number[]): [number, number] => [
+  ((a[0] ?? 0) + (b[0] ?? 0)) / 2,
+  ((a[1] ?? 0) + (b[1] ?? 0)) / 2,
+];
+
+/**
+ * Traces the outline as quadratic curves through point midpoints.
+ *
+ * Straight `lineTo` between raw outline samples leaves visible facets and, on
+ * a fast flick where samples are far apart, thin triangular whiskers at the
+ * turn — the outline crosses itself and the nonzero fill rule paints the
+ * overhang. Curving through the midpoints keeps the same silhouette without
+ * the spikes, which is how perfect-freehand's output is meant to be drawn.
+ */
 export function traceOutline(ctx: CanvasRenderingContext2D, outline: readonly number[][]): void {
+  if (outline.length < 3) return;
+
   const first = outline[0];
-  if (!first) return;
+  const last = outline[outline.length - 1];
+  if (!first || !last) return;
 
+  const start = midpoint(last, first);
   ctx.beginPath();
-  ctx.moveTo(first[0] ?? 0, first[1] ?? 0);
+  ctx.moveTo(start[0], start[1]);
 
-  for (let i = 1; i < outline.length; i += 1) {
+  for (let i = 0; i < outline.length; i += 1) {
     const current = outline[i];
-    if (!current) continue;
-    ctx.lineTo(current[0] ?? 0, current[1] ?? 0);
+    const next = outline[(i + 1) % outline.length];
+    if (!current || !next) continue;
+    const end = midpoint(current, next);
+    ctx.quadraticCurveTo(current[0] ?? 0, current[1] ?? 0, end[0], end[1]);
   }
 
   ctx.closePath();

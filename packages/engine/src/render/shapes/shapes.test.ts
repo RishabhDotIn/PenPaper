@@ -3,6 +3,7 @@ import { createElement } from "../../scene/factory";
 import { fakeCtx } from "../../test/fake-ctx";
 import { RoughCache } from "../rough-cache";
 import { drawElement, wrapText } from "./index";
+import { freedrawOutline, traceOutline } from "./freedraw";
 import { lightTheme } from "../theme";
 
 const EVERY_TYPE = [
@@ -43,6 +44,29 @@ describe("drawElement", () => {
     const ctx = fakeCtx();
     drawElement(ctx, el, new RoughCache(), lightTheme);
     expect(String(ctx.font)).toContain("20px");
+  });
+});
+
+describe("freedraw", () => {
+  it("traces the outline with curves, not raw segments", () => {
+    const outline = freedrawOutline([
+      [0, 0, 0.5],
+      [40, 12, 0.5],
+      [80, 0, 0.5],
+    ]);
+    const ctx = fakeCtx();
+
+    traceOutline(ctx, outline);
+
+    expect(ctx.calls).toContain("quadraticCurveTo");
+    expect(ctx.calls).not.toContain("lineTo");
+    expect(ctx.calls).toContain("closePath");
+  });
+
+  it("does not start a path for an outline too short to fill", () => {
+    const ctx = fakeCtx();
+    traceOutline(ctx, [[0, 0], [4, 4]]);
+    expect(ctx.calls).not.toContain("beginPath");
   });
 });
 

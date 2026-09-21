@@ -31,6 +31,32 @@ describe("Renderer", () => {
     expect(renderer.stats.frameMs).toBe(first);
   });
 
+  it("repaints when the scene changes, without an explicit markDirty", () => {
+    const scene = new Scene();
+    const renderer = new Renderer(fakeCtx(), scene, { x: 0, y: 0, zoom: 1 }, {
+      width: 800,
+      height: 600,
+      grid: false,
+    });
+    expect(renderer.render()).toMatchObject({ drawn: 0 });
+
+    scene.add(createElement("rectangle", { x: 10, y: 10, width: 20, height: 20 }, "V"));
+    expect(renderer.render()).toMatchObject({ drawn: 1 });
+  });
+
+  it("clears the whole backing store on a high-DPI canvas", () => {
+    const ctx = fakeCtx();
+    // The backing store is 800 × 600 for a 400 × 300 CSS viewport at 2×.
+    const renderer = new Renderer(ctx, new Scene(), { x: 0, y: 0, zoom: 1 }, {
+      width: 400,
+      height: 300,
+    });
+    renderer.render();
+
+    const fill = ctx.records.find((record) => record.name === "fillRect");
+    expect(fill?.args.slice(0, 4)).toEqual([0, 0, 800, 600]);
+  });
+
   it("redraws after the camera moves", () => {
     const scene = new Scene();
     scene.add({ ...createElement("rectangle", { x: 2000, y: 0, width: 10, height: 10 }, "V"), id: "offscreen" });

@@ -60,3 +60,41 @@ export function zoomAt(
 export function panBy(camera: Camera, dx: number, dy: number): Camera {
   return { ...camera, x: camera.x + dx, y: camera.y + dy };
 }
+
+export interface ViewInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/**
+ * Centres a scene in the space the chrome leaves free.
+ *
+ * `insets` are the areas covered by fixed UI (the dock, the properties panel),
+ * which is why this cannot be a symmetric padding: on a phone the bottom
+ * belongs to the toolbar, on a desktop the right belongs to the panel.
+ */
+export function fitCamera(
+  bounds: { x: number; y: number; width: number; height: number },
+  viewport: { width: number; height: number },
+  insets: ViewInsets = { top: 32, right: 32, bottom: 32, left: 32 },
+  maxZoom = 1,
+): Camera {
+  const availableWidth = Math.max(1, viewport.width - insets.left - insets.right);
+  const availableHeight = Math.max(1, viewport.height - insets.top - insets.bottom);
+
+  const zoom = clampZoom(
+    Math.min(
+      maxZoom,
+      availableWidth / Math.max(1, bounds.width),
+      availableHeight / Math.max(1, bounds.height),
+    ),
+  );
+
+  return {
+    zoom,
+    x: insets.left + (availableWidth - bounds.width * zoom) / 2 - bounds.x * zoom,
+    y: insets.top + (availableHeight - bounds.height * zoom) / 2 - bounds.y * zoom,
+  };
+}

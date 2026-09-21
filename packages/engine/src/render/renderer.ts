@@ -19,6 +19,8 @@ export interface Rect {
 export interface RendererOptions {
   width: number;
   height: number;
+  /** Backing-store pixels per CSS pixel. Drives the cached grid's sharpness. */
+  dpr?: number;
   theme?: Theme;
   grid?: boolean;
   /** Grid spacing in scene units. */
@@ -49,6 +51,8 @@ export class Renderer {
   private readonly cache = new RoughCache();
   private dirty = true;
   private gridDirty = true;
+  /** Scene revision of the last painted frame; -1 forces the first paint. */
+  private sceneRevision = -1;
   private frames: RenderStats = { drawn: 0, culled: 0, frameMs: 0 };
 
   /** Selection overlay state, owned by the input controller. */
@@ -65,12 +69,13 @@ export class Renderer {
     this.options = {
       width: options.width,
       height: options.height,
+      dpr: options.dpr ?? 1,
       theme: options.theme ?? lightTheme,
       grid: options.grid ?? true,
       gridSize: options.gridSize ?? 20,
     };
     this.layer = options.staticLayer ?? createStaticLayer();
-    this.layer.resize(this.options.width, this.options.height, 1);
+    this.layer.resize(this.options.width, this.options.height, this.options.dpr);
   }
 
   get stats(): RenderStats {
@@ -143,16 +148,31 @@ export class Renderer {
     this.dirty = true;
   }
 
-  setSize(width: number, height: number, dpr = 1): void {
-    if (this.options.width === width && this.options.height === height) return;
+  setSize(width: number, height: number, dpr = this.options.dpr): void {
+    // DPR is part of the size: on a monitor switch or browser zoom the CSS
+    // viewport can stay identical while the backing store doubles. Comparing
+    // only width/height would leave a half-resolution grid and a canvas the
+    // browser cleared without a repaint request.
+    if (this.options.width === width && this.options.height === height && this.options.dpr === dpr) {
+      return;
+    }
     this.options.width = width;
     this.options.height = height;
+    this.options.dpr = dpr;
     this.layer.resize(width, height, dpr);
     this.dirty = true;
     this.gridDirty = true;
   }
 
   render(): RenderStats {
+    // Any scene mutation is a paint request. This is deliberately checked here
+    // rather than trusted to callers: a drawing tool that forgot `markDirty`
+    // would otherwise show nothing until the stroke ended.
+    if (this.scene.revision !== this.sceneRevision) {
+      this.sceneRevision = this.scene.revision;
+      this.dirty = true;
+    }
+
     // Nothing changed: keep the previous stats so `frameMs` reading steady is
     // itself the signal that we skipped the frame.
     if (!this.dirty) return this.frames;
@@ -164,7 +184,12 @@ export class Renderer {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, width, height);
+    // Clear the whole backing store, not the CSS-sized viewport. On a 2×
+    // display those are different rectangles: filling `width × height` under
+    // an identity transform leaves the right and bottom three quarters of the
+    // canvas untouched, so every earlier frame stays on screen and the board
+    // smears (ghosted strokes, repeated text) as the user draws.
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.restore();
 
     if (this.options.grid) this.paintGrid();

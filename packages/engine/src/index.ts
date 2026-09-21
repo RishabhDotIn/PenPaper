@@ -25,11 +25,13 @@ export {
   MAX_ZOOM,
   MIN_ZOOM,
   clampZoom,
+  fitCamera,
   panBy,
   sceneToScreen,
   screenToScene,
   zoomAt,
   type Camera,
+  type ViewInsets,
 } from "./math/camera";
 
 export {

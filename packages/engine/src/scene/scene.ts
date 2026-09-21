@@ -12,6 +12,19 @@ import type { Bounds, Element } from "@penpaper/shared";
  */
 export class Scene {
   private readonly elements = new Map<string, Element>();
+  private revisionCounter = 0;
+
+  /**
+   * Bumped on every mutation.
+   *
+   * The renderer compares this against the revision it last painted, so any
+   * caller that changes the scene gets a repaint without having to remember a
+   * separate `markDirty()` call. Missing one of those calls is exactly how a
+   * live stroke becomes invisible until the pointer is released.
+   */
+  get revision(): number {
+    return this.revisionCounter;
+  }
 
   get size(): number {
     let live = 0;
@@ -24,6 +37,7 @@ export class Scene {
       throw new Error(`Scene.add: element "${element.id}" already exists`);
     }
     this.elements.set(element.id, element);
+    this.revisionCounter += 1;
   }
 
   /** Replaces recognised fields, bumps `version`, stamps `updatedAt`. */
@@ -39,6 +53,7 @@ export class Scene {
       version: current.version + 1,
       updatedAt: Date.now(),
     });
+    this.revisionCounter += 1;
   }
 
   /** Tombstones the element so it can be undone and merged. */
@@ -63,6 +78,7 @@ export class Scene {
   /** Puts an exact element back, bypassing the version/updatedAt stamping. */
   restore(element: Element): void {
     this.elements.set(element.id, element);
+    this.revisionCounter += 1;
   }
 
   /** Live elements, back to front. */
