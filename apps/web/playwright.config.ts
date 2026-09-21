@@ -3,6 +3,15 @@ import { defineConfig, devices } from "@playwright/test";
 const PORT = 3000;
 const baseURL = `http://localhost:${PORT}`;
 
+/**
+ * Development is the default because it is fast and every interaction test
+ * works there. `E2E_PRODUCTION=1` builds and serves the real production
+ * bundle, which is the only place the service worker's offline shell and the
+ * bundle's actual chunk names are meaningful (the dev HMR client is rehashed
+ * between server starts and cannot be cached).
+ */
+const production = process.env.E2E_PRODUCTION === "1";
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -15,10 +24,10 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `pnpm next dev --port ${PORT}`,
+    command: production ? `pnpm build && pnpm start --port ${PORT}` : `pnpm next dev --port ${PORT}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    reuseExistingServer: !production && !process.env.CI,
+    timeout: 300_000,
+    env: production ? { NEXT_PUBLIC_E2E: "1" } : {},
   },
 });
-

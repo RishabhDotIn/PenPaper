@@ -1,0 +1,29 @@
+name: Warm
+
+# Render's free instance sleeps after 15 minutes. Keeping it awake from 08:00
+# to 24:00 IST costs about 500 of the 750 free instance-hours per month; the
+# other eight hours stay asleep on purpose. Set the repository variable
+# PENPAPER_URL (for example https://penpaper.onrender.com) to enable the ping.
+on:
+  schedule:
+    # 02:00–18:59 UTC is 07:30–00:29 IST. Ten-minute intervals leave a five
+    # minute buffer for GitHub's scheduler delay.
+    - cron: "*/10 2-18 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    name: Wake the whiteboard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping
+        env:
+          PENPAPER_URL: ${{ vars.PENPAPER_URL }}
+        run: |
+          if [ -z "$PENPAPER_URL" ]; then
+            echo "PENPAPER_URL is not set; skipping warm-up."
+            exit 0
+          fi
+          curl --fail --silent --show-error --max-time 90 "$PENPAPER_URL/b/local" > /dev/null

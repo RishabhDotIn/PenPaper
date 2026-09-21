@@ -38,3 +38,16 @@ jobs:
       # step yet. Drop it once every package ships one.
       - name: Build
         run: pnpm -r --if-present build
+
+      - name: Bundle budget
+        run: pnpm --filter web check:bundle
+
+      - name: Install Playwright browsers
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      # The offline PWA spec needs real chunk hashes, so it runs against a
+      # production build. The workflow's webServer performs that build.
+      - name: Browser tests
+        run: pnpm --filter web e2e
+        env:
+          E2E_PRODUCTION: "1"

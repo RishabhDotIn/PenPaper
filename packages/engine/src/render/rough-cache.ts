@@ -77,7 +77,8 @@ function generate(gen: Generator, el: Element): Drawable {
   }
 }
 
-const MAX_ENTRIES = 512;
+const MAX_ENTRIES = 4096;
+const EVICT_COUNT = 256;
 
 export class RoughCache {
   private readonly entries = new Map<string, Drawable>();
@@ -96,9 +97,18 @@ export class RoughCache {
     this.misses += 1;
     const drawable = generate(this.gen, el);
 
-    // A full flush beats an LRU here: boards are edited in bursts, and the
-    // whole point is that the working set fits.
-    if (this.entries.size >= MAX_ENTRIES) this.entries.clear();
+    // A 1,000-element board has to fit without a flush. Clearing the whole map
+    // was cheap to write but meant every frame regenerated the first shapes
+    // over and over once a board crossed the cap; evicting the oldest quarter
+    // keeps repeat frames hitting while bounding memory on a phone.
+    if (this.entries.size >= MAX_ENTRIES) {
+      let evicted = 0;
+      for (const oldest of this.entries.keys()) {
+        this.entries.delete(oldest);
+        evicted += 1;
+        if (evicted >= EVICT_COUNT) break;
+      }
+    }
     this.entries.set(key, drawable);
     return drawable;
   }

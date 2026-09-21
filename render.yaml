@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: penpaper
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    autoDeploy: true
+    # The workspace install has to happen at the repository root; the app build
+    # then runs inside apps/web so Next resolves the workspace packages.
+    buildCommand: npm install -g pnpm@12.16.1 && pnpm install --frozen-lockfile && pnpm --filter web build
+    startCommand: pnpm --filter web start
+    healthCheckPath: /b/local
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
