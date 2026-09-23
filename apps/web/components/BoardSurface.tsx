@@ -15,6 +15,8 @@ export interface BoardSurfaceProps {
   onReady: (ctx: CanvasRenderingContext2D, size: SurfaceSize) => void;
   /** Tier C devices pass 1.5 (design doc 6.5). */
   maxDpr?: number;
+  /** CSS cursor for the active tool. */
+  cursor?: string;
   onPointerDown?: (input: PointerInput, event: PointerEvent) => void;
   onPointerMove?: (input: PointerInput) => void;
   onPointerUp?: (input: PointerInput) => void;
@@ -45,7 +47,7 @@ function toPointerInput(event: PointerEvent, rect: DOMRect): PointerInput {
  * every tool sees identical data regardless of device, and the engine never
  * imports a DOM type.
  */
-export function BoardSurface({ onReady, maxDpr = 2, ...handlers }: BoardSurfaceProps) {
+export function BoardSurface({ onReady, maxDpr = 2, cursor = "default", ...handlers }: BoardSurfaceProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const handlersRef = useRef(handlers);
   const onReadyRef = useRef(onReady);
@@ -156,6 +158,8 @@ export function BoardSurface({ onReady, maxDpr = 2, ...handlers }: BoardSurfaceP
       // touch-none lives on the canvas only: the page must never eat a drag,
       // and the surrounding shell must still be able to scroll.
       className="absolute inset-0 block h-full w-full touch-none"
+      style={{ cursor }}
+      onContextMenu={(event) => event.preventDefault()}
       aria-label="Whiteboard canvas"
       role="application"
     />

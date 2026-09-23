@@ -1,4 +1,22 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+/** Reads one board's saved camera, retrying while the loader finishes writing. */
+async function readCamera(page: Page, boardId: string) {
+  return page.evaluate(async (id) => {
+    const request = indexedDB.open("penpaper");
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const read = db.transaction("boards", "readonly").objectStore("boards").get(id);
+    return new Promise<{ camera?: { x: number; y: number; zoom: number } } | undefined>(
+      (resolve, reject) => {
+        read.onsuccess = () => resolve(read.result);
+        read.onerror = () => reject(read.error);
+      },
+    );
+  }, boardId);
+}
 
 /**
  * Reload is the only honest test of persistence.
@@ -60,6 +78,32 @@ test.describe("local persistence", () => {
     await page.goto("/b/persist-second");
     await expect(page.locator("main[data-ready='true']")).toBeVisible();
     await expect(page.locator("main")).toHaveAttribute("data-elements", "0");
+  });
+
+  test("the demo board opens with content and survives a reload", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/b/demo");
+    await expect(page.locator("main[data-ready='true']")).toBeVisible();
+    await expect(page.locator("main")).toHaveAttribute("data-elements", "12");
+
+    await page.reload();
+    await expect(page.locator("main[data-ready='true']")).toBeVisible();
+    await expect(page.locator("main")).toHaveAttribute("data-elements", "12");
+
+    // The demo is centred by the loader, so map one known scene point through
+    // the camera it persisted. Aim at the left padding of the first box so the
+    // label text inside is not the topmost hit.
+    const saved = await readCamera(page, "demo");
+    const camera = saved?.camera ?? { x: 0, y: 0, zoom: 1 };
+    const box = await page.getByRole("application").boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.click(
+      box!.x + camera.x + 58 * camera.zoom,
+      box!.y + camera.y + 205 * camera.zoom,
+    );
+    await expect(page.locator(".pp-properties-desktop").getByTestId("properties-panel")).toContainText(
+      "1 rectangle",
+    );
   });
 
   test("a reload keeps the camera where the user left it", async ({ page }) => {

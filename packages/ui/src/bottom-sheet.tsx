@@ -16,6 +16,8 @@ export interface BottomSheetProps {
   snapPoints?: readonly SnapPoint[];
   initialSnap?: SnapPoint;
   label?: string;
+  /** When provided, renders a close button and lets the sheet be dismissed. */
+  onClose?: () => void;
 }
 
 const PEEK_HEIGHT = 72;
@@ -39,6 +41,7 @@ export function BottomSheet({
   snapPoints = ["peek", "half", "full"],
   initialSnap = "peek",
   label = "Style",
+  onClose,
 }: BottomSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startY: number; baseHeight: number; height: number } | null>(null);
@@ -152,7 +155,16 @@ export function BottomSheet({
         onPointerUp={settle}
         onPointerCancel={settle}
       />
-      <h2 className="pp-sheet-title">{label}</h2>
+      <h2 className="pp-sheet-title">
+        {label}
+        {onClose ? (
+          <button type="button" className="pp-sheet-close" aria-label="Close styles" onClick={onClose}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        ) : null}
+      </h2>
       <div className="pp-sheet-content">{children}</div>
     </div>
   );

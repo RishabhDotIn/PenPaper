@@ -66,6 +66,8 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   const [elementCount, setElementCount] = useState(initial?.elements.length ?? 0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   const toolRef = useRef<Tool>("select");
 
   const scheduleRender = useCallback(() => {
@@ -158,6 +160,13 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     scheduleRender();
   }, [scheduleRender, syncOverlays]);
 
+  /** Mirrors the history stacks into React so the chrome can disable buttons. */
+  const refreshHistory = useCallback(() => {
+    const history = historyRef.current;
+    setCanUndo(history?.canUndo() ?? false);
+    setCanRedo(history?.canRedo() ?? false);
+  }, []);
+
   const handleReady = useCallback(
     (ctx: CanvasRenderingContext2D, size: SurfaceSize) => {
       const isFirstReady = sceneRef.current === null;
@@ -190,6 +199,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
       const renderer = new Renderer(ctx, scene, camera, {
         width: size.width,
         height: size.height,
+        dpr: size.dpr,
         theme: prefersDark ? darkTheme : lightTheme,
       });
       rendererRef.current = renderer;
@@ -210,6 +220,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
         onSceneChange: () => {
           reindex();
           refreshStats();
+          refreshHistory();
           scheduleSave();
           scheduleRender();
         },
@@ -222,10 +233,11 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
 
       reindex();
       refreshStats();
+      refreshHistory();
       scheduleRender();
       setReady(true);
     },
-    [initial, reindex, refreshSelection, refreshStats, scheduleRender, scheduleSave, syncOverlays],
+    [initial, reindex, refreshHistory, refreshSelection, refreshStats, scheduleRender, scheduleSave, syncOverlays],
   );
 
   const changeTool = useCallback((next: Tool) => {
@@ -254,9 +266,10 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
       controller.setSelection(controller.selectedElements.map((element) => element.id));
     }
     refreshStats();
+    refreshHistory();
     scheduleSave();
     scheduleRender();
-  }, [reindex, refreshStats, scheduleRender, scheduleSave]);
+  }, [reindex, refreshHistory, refreshStats, scheduleRender, scheduleSave]);
 
   const undo = useCallback(() => {
     if (historyRef.current?.undo()) afterHistory();
@@ -457,6 +470,9 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
 
   const editingElement = editingId ? sceneRef.current?.get(editingId) : undefined;
 
+  const cursor =
+    tool === "hand" ? "grab" : tool === "text" ? "text" : tool === "select" ? "default" : "crosshair";
+
   return (
     <main
       className="relative h-[100dvh] w-full overflow-hidden"
@@ -466,6 +482,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
       style={{ background: "var(--surface-lowest)" }}
     >
       <BoardSurface
+        cursor={cursor}
         onReady={handleReady}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -492,6 +509,10 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
         selection={selection}
         onPatch={patchSelection}
         onDelete={deleteSelection}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
     </main>
   );

@@ -147,6 +147,11 @@ Writes are debounced by 500 ms, flushed on `pagehide` and when the document
 becomes hidden. IndexedDB failures downgrade the board to in-memory use and mark
 the store `unavailable` rather than taking the canvas down.
 
+`/b/demo` is the one board with a seed: if there is no device snapshot, the
+loader writes a small diagram (text, freedraw, filled rectangles, arrows) before
+mounting the canvas. After that first write it is an ordinary board, so edits
+and the camera persist and the demo is never injected over user work.
+
 ## Offline shell
 
 `public/sw.js` is intentionally narrow:

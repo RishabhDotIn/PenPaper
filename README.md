@@ -25,10 +25,13 @@ network does not.
 - **Local persistence** through IndexedDB: 500 ms debounced autosave, a flush on
   `pagehide`, and camera restoration on reload.
 - **Responsive chrome** measured against excalidraw.com: a vertical dock on
-  desktop, a horizontal dock on phones, and a height-snapped bottom sheet on
-  tablets. Every coarse-pointer target is at least 44 px.
+  desktop, a two-row dock plus a compact style bar on phones, and a
+  height-snapped bottom sheet for the full style form. Every coarse-pointer
+  target is at least 44 px.
 - **Installable PWA** with offline app shell, manifest, maskable icons, and a
   service worker that serves the board offline after the first visit.
+- **A seeded demo board** at `/b/demo` — title, hand-drawn underline, three
+  filled flow boxes, arrows, and notes — so the first open is not a blank page.
 
 Not yet: real-time collaboration, accounts, cloud sync, export, image upload,
 and arrow binding. Those are the next phases in
@@ -54,8 +57,11 @@ require.
 
 ```bash
 pnpm install
-pnpm --filter web dev          # http://localhost:3000/b/local
+pnpm --filter web dev          # http://localhost:3000/b/demo
 ```
+
+`/b/local` is the personal board; `/b/demo` opens with a small diagram the first
+time and then behaves like any other local board.
 
 Use `localhost`, not `127.0.0.1`: Next's dev-server cross-origin rules treat the
 two as different origins and hydration silently stops.
@@ -85,11 +91,11 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 
 | Metric | Result | Gate |
 | --- | --- | --- |
-| Engine unit tests | 145 passing | all green |
-| Web unit tests | 8 passing | all green |
-| Browser tests | 14 passing | all green |
-| Median renderer frame body, 1,000 mixed shapes | 7.9 ms production / 10.3 ms dev | ≤ 16 ms |
-| Board route transfer, gzip | 164.1 KiB JS + CSS | ≤ 220 kB |
+| Engine unit tests | 153 passing | all green |
+| Web unit tests | 12 passing | all green |
+| Browser tests | 19 passing | all green |
+| Median renderer frame body, 1,000 mixed shapes | 8.5 ms production | ≤ 16 ms |
+| Board route transfer, gzip | 166.3 KiB JS + CSS | ≤ 220 kB |
 
 The frame measurement is the renderer's own body (cull, layout, paint commands),
 not `requestAnimationFrame` deltas, which are clamped to the display refresh rate

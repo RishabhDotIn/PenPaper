@@ -12,6 +12,7 @@ import type {
 import type { ReactNode } from "react";
 
 const STROKE_COLORS = ["#1e1e1e", "#e03131", "#2f9e44", "#1971c2", "#f08c00", "#6965db"];
+export { STROKE_COLORS };
 const BACKGROUND_COLORS = [
   "transparent",
   "#ffc9c9",
@@ -63,6 +64,11 @@ export interface PropertiesPanelProps {
   selection: readonly Element[];
   onPatch: (patch: Partial<Element>) => void;
   onDelete?: () => void;
+  /**
+   * The sheet already prints "Style" above the panel; repeating the element
+   * heading directly under it reads like a duplicate title.
+   */
+  showTitle?: boolean;
 }
 
 /**
@@ -72,7 +78,7 @@ export interface PropertiesPanelProps {
  * it forgot would be silently reset. `Partial<Element>` keeps the panel honest:
  * it can only touch what it actually shows.
  */
-export function PropertiesPanel({ selection, onPatch, onDelete }: PropertiesPanelProps) {
+export function PropertiesPanel({ selection, onPatch, onDelete, showTitle = true }: PropertiesPanelProps) {
   const first = selection[0];
 
   if (!first) {
@@ -92,9 +98,11 @@ export function PropertiesPanel({ selection, onPatch, onDelete }: PropertiesPane
 
   return (
     <div className="pp-panel" data-testid="properties-panel" aria-label="Element properties">
-      <h2 className="pp-panel-title">
-        {selection.length === 1 ? `1 ${first.type}` : `${selection.length} elements`}
-      </h2>
+      {showTitle ? (
+        <h2 className="pp-panel-title">
+          {selection.length === 1 ? `1 ${first.type}` : `${selection.length} elements`}
+        </h2>
+      ) : null}
 
       <Section label="Stroke">
         <Swatches

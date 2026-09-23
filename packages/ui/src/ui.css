@@ -43,6 +43,21 @@
   }
 }
 
+/* Below 520 px a single row cannot hold ten 44 px targets without hiding
+   tools off-screen. Two rows of five are still a bottom bar, and every tool is
+   visible without discovering a horizontal scroll. */
+@media (max-width: 519px) {
+  .pp-dock {
+    display: grid;
+    grid-template-columns: repeat(5, 44px);
+    width: max-content;
+    max-width: calc(100vw - 16px);
+    overflow: visible;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
+
 /* The plan's breakpoint: vertical dock on desktop, horizontal below. */
 @media (min-width: 1024px) {
   .pp-dock {
@@ -106,6 +121,157 @@
 .pp-tool-button svg {
   width: 18px;
   height: 18px;
+}
+
+/* ---------------------------------------------------------------- history */
+
+.pp-history {
+  position: fixed;
+  z-index: 26;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+
+  background: var(--island-bg);
+  border-radius: 10px;
+  box-shadow: var(--shadow-island);
+}
+
+.pp-history-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--on-surface);
+  background: transparent;
+  cursor: pointer;
+}
+
+.pp-history-button:hover:not(:disabled) {
+  background: var(--surface-low);
+}
+
+.pp-history-button:active:not(:disabled) {
+  background: var(--surface-container);
+}
+
+.pp-history-button:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.pp-history-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (pointer: coarse) {
+  .pp-history-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .pp-history {
+    top: auto;
+    right: auto;
+    bottom: 16px;
+    left: 16px;
+  }
+}
+
+/* ------------------------------------------------------- quick properties */
+
+/*
+ * The phone's selection bar. It sits one gap above the dock and only covers
+ * ~52 px, so a stroke can be recoloured without hiding the board. The full
+ * panel is behind "Style".
+ */
+.pp-quick {
+  position: fixed;
+  z-index: 26;
+  right: 8px;
+  bottom: calc(60px + env(safe-area-inset-bottom));
+  left: 8px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 52px;
+  padding: 4px 6px;
+
+  background: var(--island-bg);
+  border-radius: 12px;
+  box-shadow: var(--shadow-island);
+}
+
+.pp-quick-strokes {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pp-quick-swatch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.pp-quick-swatch[aria-pressed="true"] {
+  box-shadow:
+    0 0 0 2px var(--island-bg),
+    0 0 0 4px var(--primary);
+}
+
+.pp-quick-action {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  height: 44px;
+  min-width: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--on-surface);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pp-quick-action:hover {
+  background: var(--surface-low);
+}
+
+.pp-quick-delete {
+  color: var(--danger);
+}
+
+.pp-quick-action svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Two dock rows on a small phone push the bar up by one row. */
+@media (max-width: 519px) {
+  .pp-quick {
+    bottom: calc(116px + env(safe-area-inset-bottom));
+  }
 }
 
 /* ------------------------------------------------------- properties panel */
@@ -280,13 +446,47 @@
   color: var(--on-surface-muted);
 }
 
+/* A panel controlled by a finger gets finger-sized controls. 24 px swatches
+   and 28 px segments are comfortably clickable with a mouse and a coin toss
+   with a thumb. */
+@media (pointer: coarse) {
+  .pp-swatches {
+    gap: 6px;
+  }
+
+  .pp-swatch {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+  }
+
+  .pp-segment button {
+    height: 44px;
+    font-size: 13px;
+  }
+
+  .pp-select,
+  .pp-danger {
+    height: 44px;
+  }
+
+  .pp-range {
+    height: 44px;
+  }
+
+  .pp-sheet-close {
+    width: 44px;
+    height: 44px;
+  }
+}
+
 /* -------------------------------------------------------------- bottom sheet */
 
 .pp-sheet {
   position: fixed;
-  z-index: 25;
+  z-index: 40;
   right: 0;
-  bottom: calc(60px + env(safe-area-inset-bottom));
+  bottom: 0;
   left: 0;
 
   display: flex;
@@ -323,10 +523,36 @@
 }
 
 .pp-sheet-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin: 0 16px 8px;
   font-size: 13px;
   font-weight: 600;
   color: var(--on-surface);
+}
+
+.pp-sheet-close {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-right: -8px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--on-surface);
+  background: transparent;
+  cursor: pointer;
+}
+
+.pp-sheet-close:hover {
+  background: var(--surface-low);
+}
+
+.pp-sheet-close svg {
+  width: 18px;
+  height: 18px;
 }
 
 .pp-sheet-content {
