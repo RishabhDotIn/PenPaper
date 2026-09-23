@@ -36,7 +36,11 @@ export function fakeCtx(): FakeContext {
   const calls: string[] = [];
   const records: Array<{ name: string; args: readonly unknown[] }> = [];
   const values: Record<string, unknown> = {
-    canvas: { width: 800, height: 600 },
+    canvas: {
+      width: 800,
+      height: 600,
+      toDataURL: () => "data:image/png;base64,stub",
+    },
   };
 
   const target = {

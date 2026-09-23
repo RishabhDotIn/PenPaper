@@ -48,7 +48,13 @@ export { hitTest, hitsElement } from "./math/hit-test";
 
 export { computeBackingSize, visibleBounds, type BackingSize } from "./render/surface";
 
-export { Renderer, type RendererOptions, type RenderStats, type Rect } from "./render/renderer";
+export {
+  Renderer,
+  type CanvasPattern,
+  type RendererOptions,
+  type RenderStats,
+  type Rect,
+} from "./render/renderer";
 export { RoughCache } from "./render/rough-cache";
 export { drawElement } from "./render/shapes";
 export { drawMarquee, drawSelection, type SelectionOverlayOptions } from "./render/selection-overlay";
@@ -82,7 +88,7 @@ export {
   type RotateOptions,
 } from "./selection/transform";
 
-export { InputController, type ControllerDeps } from "./input/controller";
+export { InputController, type ControllerDeps, type StyleDefaults } from "./input/controller";
 export { InteractionFSM, type InteractionState } from "./input/fsm";
 export { GestureArbiter } from "./input/gestures";
 export { PalmRejection } from "./input/palm";

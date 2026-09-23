@@ -4,7 +4,7 @@ import { fakeCtx } from "../../test/fake-ctx";
 import { RoughCache } from "../rough-cache";
 import { drawElement, wrapText } from "./index";
 import { freedrawOutline, traceOutline } from "./freedraw";
-import { lightTheme } from "../theme";
+import { darkTheme, lightTheme } from "../theme";
 
 const EVERY_TYPE = [
   "rectangle",
@@ -44,6 +44,24 @@ describe("drawElement", () => {
     const ctx = fakeCtx();
     drawElement(ctx, el, new RoughCache(), lightTheme);
     expect(String(ctx.font)).toContain("20px");
+  });
+
+  it("maps the default ink to the active theme", () => {
+    const el = createElement("rectangle", { x: 0, y: 0, width: 50, height: 50 }, "V");
+    const ctx = fakeCtx();
+
+    drawElement(ctx, el, new RoughCache(), darkTheme);
+
+    expect(ctx.strokeStyle).toBe(darkTheme.stroke);
+  });
+
+  it("keeps a chosen accent colour in either theme", () => {
+    const el = { ...createElement("text", { x: 0, y: 0, width: 100, height: 40 }, "V"), text: "hi", strokeColor: "#e03131" };
+    const ctx = fakeCtx();
+
+    drawElement(ctx, el, new RoughCache(), darkTheme);
+
+    expect(ctx.fillStyle).toBe("#e03131");
   });
 });
 

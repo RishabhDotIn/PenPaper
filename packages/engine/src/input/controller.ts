@@ -30,6 +30,33 @@ export interface ControllerDeps {
   history?: History;
 }
 
+/**
+ * The style controls that apply to *new* elements.
+ *
+ * Positional and identity fields are excluded on purpose: a style is something
+ * the user picks once and the tool stamps onto the next shape, not a way to
+ * clone an element.
+ */
+export type StyleDefaults = Partial<
+  Pick<
+    Element,
+    | "strokeColor"
+    | "backgroundColor"
+    | "fillStyle"
+    | "strokeWidth"
+    | "strokeStyle"
+    | "roughness"
+    | "opacity"
+    | "fontSize"
+    | "fontFamily"
+    | "textAlign"
+    | "verticalAlign"
+    | "lineHeight"
+    | "startArrowhead"
+    | "endArrowhead"
+  >
+>;
+
 const DEFAULT_CAMERA: Camera = { x: 0, y: 0, zoom: 1 };
 const MIN_DRAG_SCENE = 4;
 const DEFAULT_SHAPE_SIZE = 100;
@@ -53,6 +80,7 @@ export class InputController {
   private tool: Tool = "select";
   private draft: Draft | null = null;
   private selected = new Set<string>();
+  private style: StyleDefaults = {};
 
   /** Captured on pointer-down so every move is computed from the original. */
   private transformStart: { element: Element; handle: Handle } | null = null;
@@ -110,6 +138,30 @@ export class InputController {
   setCamera(camera: Camera): void {
     this.camera = camera;
     this.deps.onCameraChange?.(camera);
+    this.deps.onRender?.();
+  }
+
+  /** Style applied to every element the tool creates from now on. */
+  setStyle(style: StyleDefaults): void {
+    this.style = { ...style };
+  }
+
+  getStyle(): StyleDefaults {
+    return { ...this.style };
+  }
+
+  /** Tombstones every live element as one undoable step. */
+  clearScene(): void {
+    if (this.scene.size === 0) return;
+
+    this.deps.history?.begin("clear");
+    for (const element of this.scene.ordered()) this.scene.remove(element.id);
+    this.selected.clear();
+    this.draft = null;
+    this.deps.history?.commit();
+
+    this.deps.onSelectionChange?.([]);
+    this.deps.onSceneChange?.();
     this.deps.onRender?.();
   }
 
@@ -458,6 +510,11 @@ export class InputController {
 
   // ----------------------------------------------------------------- drawing
 
+  /** Stamps the user's chosen style over the factory defaults. */
+  private styled(element: Element): Element {
+    return { ...element, ...this.style };
+  }
+
   private topIndex(): string {
     const ordered = this.scene.ordered();
     const last = ordered[ordered.length - 1];
@@ -466,7 +523,9 @@ export class InputController {
 
   private beginDraw(point: Point, pressure: number): void {
     const type = this.tool as Element["type"];
-    const element = createElement(type, { x: point.x, y: point.y, width: 0, height: 0 }, this.topIndex());
+    const element = this.styled(
+      createElement(type, { x: point.x, y: point.y, width: 0, height: 0 }, this.topIndex()),
+    );
     this.deps.history?.begin("draw");
 
     if (type === "freedraw") {
@@ -580,7 +639,9 @@ export class InputController {
 
   private beginText(point: Point): void {
     this.deps.history?.begin("text");
-    const element = createElement("text", { x: point.x, y: point.y, width: 200, height: 28 }, this.topIndex());
+    const element = this.styled(
+      createElement("text", { x: point.x, y: point.y, width: 200, height: 28 }, this.topIndex()),
+    );
     this.scene.add(element);
     this.setSelection([element.id]);
     this.fsm.transition("editingText");

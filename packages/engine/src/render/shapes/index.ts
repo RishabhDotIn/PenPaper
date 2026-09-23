@@ -58,15 +58,29 @@ export function renderDrawable(
 }
 
 /**
+ * The two default inks. A board drawn in light mode carries near-black ink;
+ * painting it on the dark theme unchanged would make every stroke disappear.
+ * The mapping happens at paint time only, so the stored colour, exports in the
+ * other theme, and collaboration data are untouched.
+ */
+const DEFAULT_INKS: ReadonlySet<string> = new Set(["#1e1e1e", "#e3e3e8"]);
+
+function themedInk(el: Element, theme: Theme): Element {
+  if (!DEFAULT_INKS.has(el.strokeColor) || el.strokeColor === theme.stroke) return el;
+  return { ...el, strokeColor: theme.stroke };
+}
+
+/**
  * Draws one element in scene space. Assumes the caller has already applied the
  * camera transform.
  */
 export function drawElement(
   ctx: CanvasRenderingContext2D,
-  el: Element,
+  element: Element,
   cache: RoughCache,
   theme: Theme,
 ): void {
+  const el = themedInk(element, theme);
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, el.opacity / 100));
 

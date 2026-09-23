@@ -283,6 +283,62 @@ describe("InputController", () => {
   });
 });
 
+describe("InputController style defaults", () => {
+  it("stamps the chosen style onto a shape drawn afterwards", () => {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setTool("rectangle");
+    c.setStyle({
+      strokeColor: "#e03131",
+      backgroundColor: "#ffec99",
+      fillStyle: "solid",
+      strokeWidth: 4,
+      opacity: 60,
+    });
+
+    c.pointerDown({ ...basePointer, x: 10, y: 10 });
+    c.pointerMove({ ...basePointer, x: 110, y: 90 });
+    c.pointerUp({ ...basePointer, x: 110, y: 90 });
+
+    expect(deps.scene.ordered()[0]).toMatchObject({
+      type: "rectangle",
+      strokeColor: "#e03131",
+      backgroundColor: "#ffec99",
+      fillStyle: "solid",
+      strokeWidth: 4,
+      opacity: 60,
+    });
+  });
+
+  it("applies the style to freedraw and text as well", () => {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setStyle({ strokeColor: "#1971c2", strokeWidth: 1, fontSize: 36, fontFamily: "mono" });
+
+    c.setTool("freedraw");
+    c.pointerDown({ ...basePointer, type: "pen", x: 0, y: 0 });
+    c.pointerMove({ ...basePointer, type: "pen", x: 20, y: 20 });
+    c.pointerUp({ ...basePointer, type: "pen", x: 20, y: 20 });
+
+    c.setTool("text");
+    c.pointerDown({ ...basePointer, x: 100, y: 100 });
+
+    const [stroke, text] = deps.scene.ordered();
+    expect(stroke).toMatchObject({ type: "freedraw", strokeColor: "#1971c2", strokeWidth: 1 });
+    expect(text).toMatchObject({ type: "text", strokeColor: "#1971c2", fontSize: 36, fontFamily: "mono" });
+  });
+
+  it("returns a copy so callers cannot mutate the controller's style", () => {
+    const c = new InputController(makeDeps());
+    c.setStyle({ strokeColor: "#2f9e44" });
+
+    const style = c.getStyle();
+    style.strokeColor = "#000000";
+
+    expect(c.getStyle().strokeColor).toBe("#2f9e44");
+  });
+});
+
 describe("InputController history", () => {
   /**
    * A gesture is one undo step no matter how many pointer samples it emitted.
@@ -363,6 +419,27 @@ describe("InputController history", () => {
     history.undo();
     expect(deps.scene.size).toBe(1);
     expect(deps.scene.get(el.id)?.isDeleted).toBe(false);
+  });
+
+  it("clears the whole board as one undoable step", () => {
+    const deps = makeDeps();
+    const first = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    const second = createElement("ellipse", { x: 200, y: 0, width: 100, height: 100 }, "W");
+    deps.scene.add(first);
+    deps.scene.add(second);
+
+    const history = new History(deps.scene);
+    const c = new InputController({ ...deps, history });
+    c.setSelection([first.id, second.id]);
+
+    c.clearScene();
+
+    expect(deps.scene.size).toBe(0);
+    expect(c.selection).toEqual([]);
+    expect(deps.onSelectionChange).toHaveBeenLastCalledWith([]);
+
+    expect(history.undo()).toBe(true);
+    expect(deps.scene.size).toBe(2);
   });
 });
 

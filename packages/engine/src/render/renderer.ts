@@ -22,11 +22,17 @@ export interface RendererOptions {
   /** Backing-store pixels per CSS pixel. Drives the cached grid's sharpness. */
   dpr?: number;
   theme?: Theme;
+  /** Canvas layout: no marks, dots at the grid intersections, or full lines. */
+  pattern?: CanvasPattern;
+  /** Overrides the theme background. `null`/omitted follows the theme. */
+  background?: string | null;
   grid?: boolean;
   /** Grid spacing in scene units. */
   gridSize?: number;
   staticLayer?: StaticLayer;
 }
+
+export type CanvasPattern = "none" | "dots" | "lines";
 
 export interface RenderStats {
   drawn: number;
@@ -71,6 +77,8 @@ export class Renderer {
       height: options.height,
       dpr: options.dpr ?? 1,
       theme: options.theme ?? lightTheme,
+      pattern: options.pattern ?? "lines",
+      background: options.background ?? null,
       grid: options.grid ?? true,
       gridSize: options.gridSize ?? 20,
     };
@@ -113,6 +121,40 @@ export class Renderer {
     this.options.grid = enabled;
     this.dirty = true;
     this.gridDirty = true;
+  }
+
+  /** Plain, dotted, or ruled paper. */
+  setPattern(pattern: CanvasPattern): void {
+    if (this.options.pattern === pattern) return;
+    this.options.pattern = pattern;
+    this.dirty = true;
+    this.gridDirty = true;
+  }
+
+  /** `null` returns to the theme's own background. */
+  setBackground(color: string | null): void {
+    if (this.options.background === color) return;
+    this.options.background = color;
+    this.dirty = true;
+    this.gridDirty = true;
+  }
+
+  /** The painted board as a PNG data URL, without selection or marquee. */
+  toDataUrl(): string {
+    const selection = this.selection;
+    const marquee = this.marqueeRect;
+
+    this.selection = [];
+    this.marqueeRect = null;
+    this.dirty = true;
+    this.render();
+
+    const url = this.ctx.canvas.toDataURL("image/png");
+
+    this.selection = selection;
+    this.marqueeRect = marquee;
+    this.dirty = true;
+    return url;
   }
 
   /**
@@ -183,7 +225,7 @@ export class Renderer {
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = theme.background;
+    ctx.fillStyle = this.options.background ?? theme.background;
     // Clear the whole backing store, not the CSS-sized viewport. On a 2×
     // display those are different rectangles: filling `width × height` under
     // an identity transform leaves the right and bottom three quarters of the
@@ -234,11 +276,11 @@ export class Renderer {
   private paintGrid(): void {
     if (!this.gridDirty) return;
 
-    const { theme, width, height } = this.options;
+    const { theme, width, height, pattern } = this.options;
     const spacing = this.options.gridSize * this.camera.zoom;
 
     // Below ~6 px the grid reads as a grey haze and costs real time.
-    if (spacing < 6) {
+    if (pattern === "none" || spacing < 6) {
       this.layer.clear();
       this.gridDirty = false;
       return;
@@ -247,17 +289,33 @@ export class Renderer {
     this.layer.clear();
     this.layer.draw((g) => {
       g.strokeStyle = theme.grid;
+      g.fillStyle = theme.grid;
       g.lineWidth = 1;
       g.beginPath();
 
       const startX = this.camera.x % spacing;
+      const startY = this.camera.y % spacing;
+
+      if (pattern === "dots") {
+        // Dots only at intersections: one mark per cell instead of two lines,
+        // which keeps a dotted board as cheap as a ruled one.
+        const radius = spacing > 24 ? 1.2 : 0.9;
+        for (let x = startX; x <= width; x += spacing) {
+          for (let y = startY; y <= height; y += spacing) {
+            g.moveTo(Math.round(x) + radius, Math.round(y));
+            g.arc(Math.round(x), Math.round(y), radius, 0, Math.PI * 2);
+          }
+        }
+        g.fill();
+        return;
+      }
+
       for (let x = startX; x <= width; x += spacing) {
         const px = Math.round(x) + 0.5;
         g.moveTo(px, 0);
         g.lineTo(px, height);
       }
 
-      const startY = this.camera.y % spacing;
       for (let y = startY; y <= height; y += spacing) {
         const py = Math.round(y) + 0.5;
         g.moveTo(0, py);
