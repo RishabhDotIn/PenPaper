@@ -3,6 +3,12 @@
 import { BoardChrome } from "@/components/BoardChrome";
 import { BoardSurface, type SurfaceSize } from "@/components/BoardSurface";
 import { TextEditorOverlay } from "@/components/TextEditorOverlay";
+import {
+  effectiveTheme,
+  loadPreferences,
+  savePreferences,
+  type Preferences,
+} from "@/lib/preferences";
 import { saveBoard, type BoardSnapshot } from "@/lib/storage";
 import { useBoardStore } from "@/store/board-store";
 import {
@@ -28,6 +34,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const WORLD = { x: -1_000_000, y: -1_000_000, width: 2_000_000, height: 2_000_000 };
 const IDENTITY_CAMERA: Camera = { x: 0, y: 0, zoom: 1 };
+
+/** Tools that create a new element, and therefore have a style to choose. */
+const CREATION_TOOLS: ReadonlySet<Tool> = new Set([
+  "freedraw",
+  "rectangle",
+  "ellipse",
+  "diamond",
+  "arrow",
+  "line",
+  "text",
+]);
 
 /** Long enough to coalesce a stroke, short enough to survive a tab crash. */
 const SAVE_DEBOUNCE_MS = 500;
@@ -68,7 +85,31 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   const [ready, setReady] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [preferences, setPreferences] = useState<Preferences>(() => loadPreferences());
   const toolRef = useRef<Tool>("select");
+  const preferencesRef = useRef(preferences);
+  preferencesRef.current = preferences;
+
+  /**
+   * Preferences are read once from the device, then mirrored into the engine.
+   * Keeping a ref means the engine wiring does not need to be rebuilt (and the
+   * canvas not re-created) every time a colour changes.
+   */
+  const updatePreferences = useCallback((patch: Partial<Preferences>) => {
+    const next = { ...preferencesRef.current, ...patch };
+    preferencesRef.current = next;
+    setPreferences(next);
+    savePreferences(next);
+  }, []);
+
+  const setStyleDefault = useCallback((patch: Partial<Element>) => {
+    const style = { ...preferencesRef.current.style, ...patch };
+    const next = { ...preferencesRef.current, style };
+    preferencesRef.current = next;
+    setPreferences(next);
+    savePreferences(next);
+    controllerRef.current?.setStyle(style);
+  }, []);
 
   const scheduleRender = useCallback(() => {
     if (frameRef.current !== 0) return;
@@ -195,12 +236,18 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
       }
 
       const camera = initial?.camera ?? IDENTITY_CAMERA;
+      const preferencesAtStart = preferencesRef.current;
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       const renderer = new Renderer(ctx, scene, camera, {
         width: size.width,
         height: size.height,
         dpr: size.dpr,
-        theme: prefersDark ? darkTheme : lightTheme,
+        theme:
+          effectiveTheme(preferencesAtStart.theme, prefersDark) === "dark"
+            ? darkTheme
+            : lightTheme,
+        background: preferencesAtStart.background,
+        pattern: preferencesAtStart.layout,
       });
       rendererRef.current = renderer;
 
@@ -229,6 +276,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
       });
 
       controller.setTool(toolRef.current);
+      controller.setStyle(preferencesAtStart.style);
       controllerRef.current = controller;
 
       reindex();
@@ -243,7 +291,13 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   const changeTool = useCallback((next: Tool) => {
     toolRef.current = next;
     setTool(next);
-    controllerRef.current?.setTool(next);
+    const controller = controllerRef.current;
+    if (!controller) return;
+    controller.setTool(next);
+    // Choosing a drawing tool is a declaration of intent: the old selection is
+    // no longer what the person is about to edit. Leaving it selected would
+    // point the style panel at the previous shape while the new tool is armed.
+    if (next !== "select" && next !== "hand") controller.setSelection([]);
   }, []);
 
   const patchSelection = useCallback((patch: Partial<Element>) => {
@@ -279,6 +333,27 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     if (historyRef.current?.redo()) afterHistory();
   }, [afterHistory]);
 
+  const resetCanvas = useCallback(() => {
+    controllerRef.current?.clearScene();
+  }, []);
+
+  /**
+   * Export is the visible viewport as painted, with overlays suppressed. A
+   * "whole board" export would need an offscreen render sized to the scene;
+   * this is honest about being the current view and keeps the button instant.
+   */
+  const exportPng = useCallback(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+
+    const anchor = document.createElement("a");
+    anchor.href = renderer.toDataUrl();
+    anchor.download = `penpaper-${boardId}.png`;
+    anchor.rel = "noopener";
+    anchor.click();
+    scheduleRender();
+  }, [boardId, scheduleRender]);
+
   // A phone opens with the pen: "select" on a blank board is a dead tap.
   useEffect(() => {
     if (window.matchMedia("(pointer: coarse)").matches) changeTool("freedraw");
@@ -286,11 +361,44 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => rendererRef.current?.setTheme(media.matches ? darkTheme : lightTheme);
 
+    const apply = () => {
+      const resolved = effectiveTheme(preferences.theme, media.matches);
+      document.documentElement.dataset.theme = resolved;
+
+      // Keep the installed app's status bar in step with an explicit override;
+      // the media-based meta tags cannot express "the user chose dark".
+      for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
+        meta.setAttribute("content", resolved === "dark" ? "#121212" : "#ffffff");
+      }
+
+      rendererRef.current?.setTheme(resolved === "dark" ? darkTheme : lightTheme);
+      scheduleRender();
+
+      // The default pen follows the paper. Only a default ink is adjusted;
+      // a deliberately chosen accent colour is left alone.
+      const style = preferencesRef.current.style;
+      const defaultInk = resolved === "dark" ? "#e3e3e8" : "#1e1e1e";
+      if (
+        (style.strokeColor === "#1e1e1e" || style.strokeColor === "#e3e3e8") &&
+        style.strokeColor !== defaultInk
+      ) {
+        setStyleDefault({ strokeColor: defaultInk });
+      }
+    };
+
+    apply();
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
-  }, []);
+  }, [preferences.theme, scheduleRender, setStyleDefault]);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    renderer.setBackground(preferences.background);
+    renderer.setPattern(preferences.layout);
+    scheduleRender();
+  }, [preferences.background, preferences.layout, scheduleRender]);
 
   // A hidden tab may be closed without another chance to write, and iOS often
   // kills backgrounded pages outright; flush while the document is still alive.
@@ -513,6 +621,19 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
         onRedo={redo}
         canUndo={canUndo}
         canRedo={canRedo}
+        styleDefaults={preferences.style}
+        onStyleDefaultsChange={setStyleDefault}
+        isCreating={CREATION_TOOLS.has(tool)}
+        menu={{
+          theme: preferences.theme,
+          onThemeChange: (theme) => updatePreferences({ theme }),
+          background: preferences.background,
+          onBackgroundChange: (background) => updatePreferences({ background }),
+          layout: preferences.layout,
+          onLayoutChange: (layout) => updatePreferences({ layout }),
+          onExport: exportPng,
+          onReset: resetCanvas,
+        }}
       />
     </main>
   );

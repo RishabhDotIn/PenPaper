@@ -1,9 +1,28 @@
 "use client";
 
-import { BottomSheet, PropertiesPanel, QuickProperties, Toolbar } from "@penpaper/ui";
-import type { Tool } from "@penpaper/engine";
-import type { Element } from "@penpaper/shared";
-import { useEffect, useState } from "react";
+import {
+  AppMenu,
+  BottomSheet,
+  PropertiesPanel,
+  QuickProperties,
+  Toolbar,
+  type CanvasLayout,
+  type ThemeChoice,
+} from "@penpaper/ui";
+import { createElement, type StyleDefaults, type Tool } from "@penpaper/engine";
+import type { Element, ElementType } from "@penpaper/shared";
+import { useEffect, useMemo, useState } from "react";
+
+export interface BoardMenuProps {
+  theme: ThemeChoice;
+  onThemeChange: (theme: ThemeChoice) => void;
+  background: string | null;
+  onBackgroundChange: (color: string | null) => void;
+  layout: CanvasLayout;
+  onLayoutChange: (layout: CanvasLayout) => void;
+  onExport: () => void;
+  onReset: () => void;
+}
 
 export interface BoardChromeProps {
   tool: Tool;
@@ -15,14 +34,25 @@ export interface BoardChromeProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  /** Style stamped onto the next element the active tool creates. */
+  styleDefaults: StyleDefaults;
+  onStyleDefaultsChange: (patch: Partial<Element>) => void;
+  /** A drawing tool is active, so there is a "next element" to style. */
+  isCreating: boolean;
+  menu: BoardMenuProps;
 }
 
 /**
  * The floating chrome over the canvas.
  *
- * Layout is CSS, not React: the dock and the properties panel choose their own
- * side of the breakpoint, so resizing a window never remounts a component and
- * never loses focus in the properties form.
+ * Layout is CSS, not React: the dock and the style panel choose their own side
+ * of the breakpoint, so resizing a window never remounts a component and never
+ * loses focus in the properties form.
+ *
+ * The style panel has two jobs, exactly like Excalidraw's: with a drawing tool
+ * active it edits the style of the next element, and with a selection it edits
+ * that element. The first job is why the panel is visible before a stroke
+ * exists at all.
  */
 export function BoardChrome({
   tool,
@@ -34,18 +64,52 @@ export function BoardChrome({
   onRedo,
   canUndo,
   canRedo,
+  styleDefaults,
+  onStyleDefaultsChange,
+  isCreating,
+  menu,
 }: BoardChromeProps) {
   const [stylesOpen, setStylesOpen] = useState(false);
+
+  const showStyle = selection.length > 0 || isCreating;
+
+  // The panel needs an Element because that is the model it edits. For defaults
+  // it gets a zero-sized preview of the active tool: same fields, no scene.
+  const preview = useMemo(
+    () =>
+      ({
+        ...createElement(
+          (isCreating ? tool : "freedraw") as ElementType,
+          { x: 0, y: 0, width: 0, height: 0 },
+          "style-preview",
+        ),
+        ...styleDefaults,
+      }) as Element,
+    [isCreating, styleDefaults, tool],
+  );
+
+  const styleValue = selection.length > 0 ? selection : [preview];
 
   // Losing the selection (a tap on empty canvas, a delete) must also dismiss
   // the sheet; leaving it open over an empty canvas hides the board for nothing.
   useEffect(() => {
-    if (selection.length === 0) setStylesOpen(false);
-  }, [selection.length]);
+    if (!showStyle) setStylesOpen(false);
+  }, [showStyle]);
 
   return (
     <>
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
+      <AppMenu
+        {...menu}
+        onUndo={onUndo}
+        onRedo={onRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+      />
+
+      <header
+        className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center"
+        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+      >
         <div
           className="pointer-events-auto rounded-[var(--radius-island)] px-3 py-2 text-sm font-medium"
           style={{ background: "var(--island-bg)", boxShadow: "var(--shadow-island)" }}
@@ -86,30 +150,36 @@ export function BoardChrome({
 
       <Toolbar value={tool} onChange={onToolChange} />
 
-      {/* Excalidraw's panel only exists while something is selected. Keeping an
-          empty one on screen covers the canvas with a dead slab on a tablet and
-          gives the eye nothing to read. */}
-      {selection.length > 0 ? (
-        <aside className="pp-properties-desktop" aria-label="Properties">
-          <PropertiesPanel selection={selection} onPatch={onPatch} onDelete={onDelete} />
+      {showStyle ? (
+        <aside className="pp-properties-desktop" aria-label="Style">
+          <PropertiesPanel
+            selection={styleValue}
+            onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}
+            onDelete={selection.length > 0 ? onDelete : undefined}
+            title={selection.length > 0 ? undefined : "Style"}
+          />
         </aside>
       ) : null}
 
       <div className="pp-properties-mobile">
-        {selection.length > 0 ? (
+        {showStyle ? (
           <>
             <QuickProperties
-              selection={selection}
-              onPatch={onPatch}
+              value={styleValue[0]!}
+              mode={selection.length > 0 ? "selection" : "default"}
+              onStroke={(strokeColor) =>
+                selection.length > 0
+                  ? onPatch({ strokeColor })
+                  : onStyleDefaultsChange({ strokeColor })
+              }
               onOpenStyles={() => setStylesOpen(true)}
-              onDelete={onDelete}
+              onDelete={selection.length > 0 ? onDelete : undefined}
             />
             {stylesOpen ? (
               <BottomSheet label="Style" initialSnap="half" onClose={() => setStylesOpen(false)}>
                 <PropertiesPanel
-                  selection={selection}
-                  onPatch={onPatch}
-                  onDelete={onDelete}
+                  selection={styleValue}
+                  onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}
                   showTitle={false}
                 />
               </BottomSheet>

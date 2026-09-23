@@ -11,7 +11,15 @@ import type {
 } from "@penpaper/shared";
 import type { ReactNode } from "react";
 
-const STROKE_COLORS = ["#1e1e1e", "#e03131", "#2f9e44", "#1971c2", "#f08c00", "#6965db"];
+const STROKE_COLORS = [
+  "#1e1e1e",
+  "#e03131",
+  "#2f9e44",
+  "#1971c2",
+  "#f08c00",
+  "#6965db",
+  "#e3e3e8",
+];
 export { STROKE_COLORS };
 const BACKGROUND_COLORS = [
   "transparent",
@@ -69,6 +77,8 @@ export interface PropertiesPanelProps {
    * heading directly under it reads like a duplicate title.
    */
   showTitle?: boolean;
+  /** Overrides the automatic "1 rectangle" heading, e.g. for style defaults. */
+  title?: string;
 }
 
 /**
@@ -78,7 +88,13 @@ export interface PropertiesPanelProps {
  * it forgot would be silently reset. `Partial<Element>` keeps the panel honest:
  * it can only touch what it actually shows.
  */
-export function PropertiesPanel({ selection, onPatch, onDelete, showTitle = true }: PropertiesPanelProps) {
+export function PropertiesPanel({
+  selection,
+  onPatch,
+  onDelete,
+  showTitle = true,
+  title,
+}: PropertiesPanelProps) {
   const first = selection[0];
 
   if (!first) {
@@ -100,7 +116,8 @@ export function PropertiesPanel({ selection, onPatch, onDelete, showTitle = true
     <div className="pp-panel" data-testid="properties-panel" aria-label="Element properties">
       {showTitle ? (
         <h2 className="pp-panel-title">
-          {selection.length === 1 ? `1 ${first.type}` : `${selection.length} elements`}
+          {title ??
+            (selection.length === 1 ? `1 ${first.type}` : `${selection.length} elements`)}
         </h2>
       ) : null}
 

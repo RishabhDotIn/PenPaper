@@ -97,7 +97,7 @@ test.describe("responsive chrome", () => {
     await expect(panel).toContainText("1 rectangle");
 
     await page.keyboard.press("Control+z");
-    await expect(panel).toHaveCount(0);
+    await expect(page.locator("main")).toHaveAttribute("data-elements", "0");
 
     await page.keyboard.press("Control+Shift+z");
 

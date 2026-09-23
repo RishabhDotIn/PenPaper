@@ -11,6 +11,7 @@ apps/web              Next.js App Router shell
   app/b/[id]          one board per route
   components/         BoardLoader, BoardScreen, BoardSurface, TextEditorOverlay
   lib/storage.ts      IndexedDB snapshot store (idb)
+  lib/preferences.ts  validated theme/paper/layout/style defaults (localStorage)
   store/board-store.ts  Zustand metadata (status, element count, savedAt)
   public/sw.js        offline shell service worker
   e2e/                Playwright specs
@@ -23,7 +24,7 @@ packages/engine       framework-agnostic canvas engine
   history/            transaction history and commands
   text/               wrapping and measurement
   serialize.ts        versioned board JSON
-packages/ui           toolbar, properties panel, bottom sheet, CSS tokens
+packages/ui           toolbar, properties panel, app menu, bottom sheet, CSS tokens
 ```
 
 The engine has no React, Next, or module-scope `window` access. Its runtime
@@ -36,10 +37,10 @@ desktop shell.
 React renders exactly one `<canvas>` and a set of HTML islands (toolbar,
 properties, text editor). Everything inside the canvas is painted by the engine:
 
-1. **Background** — theme fill.
-2. **Grid** — drawn once into an offscreen canvas and blitted until the camera
-   or theme changes. Below ~6 px spacing the grid is skipped rather than drawn
-   as a grey haze.
+1. **Background** — the theme fill, or the paper colour chosen in the menu.
+2. **Grid** — plain (nothing), dotted, or boxed paper, drawn once into an
+   offscreen canvas and blitted until the camera, theme, layout, or paper changes.
+   Below ~6 px spacing the grid is skipped rather than drawn as a grey haze.
 3. **Elements** — `Scene.ordered()` returns live elements sorted by fractional
    `index`. A quadtree-backed view bounds check culls anything off screen before
    `drawElement` runs.
@@ -125,6 +126,37 @@ it back and commit an empty value immediately. The textarea is never smaller
 than 16 px, which stops iOS from zooming the page on focus, and it lifts with
 `visualViewport` so the Android keyboard does not cover it.
 
+### Chrome ownership
+
+`BoardChrome` renders three separate islands and owns no board state:
+
+- **Toolbar** — the active tool, mirrored from `BoardScreen`.
+- **Style panel** — `PropertiesPanel` on desktop, `QuickProperties` plus a
+  `BottomSheet` on phones. It edits one of two targets: the selected elements,
+  or the style defaults stamped onto the next element the active tool creates.
+  `InputController.setStyle()` holds that default; the panel receives a
+  zero-sized preview element built from it, so the same form code serves both
+  cases without a second component.
+- **`AppMenu`** — the hamburger popover: undo/redo, theme, paper colour, layout,
+  PNG export, and reset. Appearance actions keep the popover open so themes can
+  be compared; one-shot and destructive actions close it.
+
+Choosing a tool other than `select` or `hand` clears the selection, so the
+panel's target follows intent: after tapping "rectangle" the panel means "the
+rectangle I am about to draw", not "the shape I had selected".
+
+### Paint-time ink mapping
+
+A board drawn in light mode stores near-black ink (`#1e1e1e`). Painting that
+unchanged on the dark theme would erase every stroke. `drawElement` therefore
+maps only the two default inks to the active theme's stroke colour *while
+painting*; the stored element, the IndexedDB snapshot, and any future
+collaboration payload keep their original value. Colours the user picked
+deliberately are never rewritten.
+
+The default style follows the same rule: switching theme moves the default pen
+between `#1e1e1e` and `#e3e3e8` only while it is still a default ink.
+
 ## Persistence and hydration
 
 `BoardLoader` reads IndexedDB **before** mounting the canvas. `undefined` means
@@ -146,6 +178,25 @@ copy.
 Writes are debounced by 500 ms, flushed on `pagehide` and when the document
 becomes hidden. IndexedDB failures downgrade the board to in-memory use and mark
 the store `unavailable` rather than taking the canvas down.
+
+Device preferences are separate from board content and live in `localStorage`
+under `penpaper:prefs:v1`:
+
+```ts
+{ theme: "light" | "dark" | "system", background: string | null,
+  layout: "none" | "dots" | "lines", style: StyleDefaults }
+```
+
+Theme, paper, layout, and the next-element style are device facts, not board
+facts: they should follow a person across every board without being uploaded or
+merged. `loadPreferences` normalises hand-edited or stale JSON field by field,
+falling back to defaults rather than letting a bad colour reach the renderer.
+A pre-paint inline script in `app/layout.tsx` resolves the theme before the
+first frame, so a dark board never flashes white.
+
+The canvas has no `localStorage`, so these values are pushed into the renderer
+at startup and through `setTheme`, `setBackground`, and `setPattern` whenever
+they change.
 
 `/b/demo` is the one board with a seed: if there is no device snapshot, the
 loader writes a small diagram (text, freedraw, filled rectangles, arrows) before
@@ -233,10 +284,11 @@ so that phase changes the transport, not the data model.
 - **Web unit tests** cover IndexedDB persistence and the Zustand metadata store
   with `fake-indexeddb`.
 - **Playwright** covers the seams that only a real browser can prove: responsive
-  chrome and 44 px targets, a drag as one undo step, autosave surviving reload,
-  board isolation, camera restoration, text overlay focus/IME-ish behaviour,
-  the 1,000-element frame budget, manifest/icons, and the offline shell in a
-  production build.
+  chrome and 44 px targets, a drag as one undo step, a style chosen before any
+  element exists, theme and paper changes verified in canvas pixels, autosave
+  surviving reload, board isolation, camera restoration, text overlay
+  focus/IME-ish behaviour, the 1,000-element frame budget, manifest/icons, and
+  the offline shell in a production build.
 
 Device automation for the Poco F6 and Xiaomi Pad 7 is still a manual pass. iOS
 and Apple Pencil remain targeted but unverified.

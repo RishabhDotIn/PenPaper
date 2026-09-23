@@ -36,8 +36,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className="h-[100dvh] overflow-hidden overscroll-none">
+        {/* Resolve the saved theme before the first paint. Without this the
+            board paints light for a frame and then snaps to dark. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              'try{var p=JSON.parse(localStorage.getItem("penpaper:prefs:v1")||"null");var t=p&&p.theme;if(t!=="light"&&t!=="dark"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.dataset.theme=t}catch(e){}',
+          }}
+        />
         {children}
         <ServiceWorkerRegistrar />
       </body>

@@ -4,10 +4,12 @@ import type { Element } from "@penpaper/shared";
 import { STROKE_COLORS } from "./properties-panel";
 
 export interface QuickPropertiesProps {
-  selection: readonly Element[];
-  onPatch: (patch: Partial<Element>) => void;
+  value: Element;
+  onStroke: (color: string) => void;
   onOpenStyles: () => void;
   onDelete?: () => void;
+  /** Selection editing or the style defaults for the active drawing tool. */
+  mode?: "selection" | "default";
 }
 
 /**
@@ -16,19 +18,23 @@ export interface QuickPropertiesProps {
  * A full-height sheet used to open on every selection — including immediately
  * after every pen stroke — which hid half the board while drawing. This bar
  * keeps the two edits that matter in the middle of a sketch (colour, delete)
- * one tap away and puts the rest behind an explicit "Style" button.
+ * one tap away and puts the rest behind an explicit "Style" button. With a
+ * drawing tool active it edits the style of the *next* element, so a colour
+ * can be chosen before the stroke exists.
  */
 export function QuickProperties({
-  selection,
-  onPatch,
+  value,
+  onStroke,
   onOpenStyles,
   onDelete,
+  mode = "selection",
 }: QuickPropertiesProps) {
-  const first = selection[0];
-  if (!first) return null;
-
   return (
-    <div className="pp-quick" data-testid="quick-properties" aria-label="Quick properties">
+    <div
+      className="pp-quick"
+      data-testid="quick-properties"
+      aria-label={mode === "default" ? "Quick style" : "Quick properties"}
+    >
       <div className="pp-quick-strokes" role="group" aria-label="Stroke colour">
         {STROKE_COLORS.map((color) => (
           <button
@@ -37,8 +43,8 @@ export function QuickProperties({
             className="pp-quick-swatch"
             style={{ background: color }}
             aria-label={`Stroke ${color}`}
-            aria-pressed={first.strokeColor === color}
-            onClick={() => onPatch({ strokeColor: color })}
+            aria-pressed={value.strokeColor === color}
+            onClick={() => onStroke(color)}
           />
         ))}
       </div>

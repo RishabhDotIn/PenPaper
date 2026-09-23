@@ -7,11 +7,13 @@ network does not.
 
 **Live demo:** _deployment pending — see [Deploying](#deploying)._
 
-![PenPaper icon](apps/web/public/icons/icon-192.png)
+| Desktop | Phone |
+| --- | --- |
+| ![PenPaper on desktop](docs/screenshots/penpaper-desktop.png) | ![PenPaper on a phone](docs/screenshots/penpaper-phone.png) |
 
 ## What works today (Phase 1)
 
-- **Infinite canvas** with scroll-to-pan, pinch-to-zoom, and a cached dot grid.
+- **Infinite canvas** with scroll-to-pan, pinch-to-zoom, and a cached grid.
 - **Freehand drawing** with pressure-sensitive strokes (Perfect Freehand), palm
   rejection, and coalesced pointer samples.
 - **Shapes** — rectangle, ellipse, diamond, line, and arrow — drawn with
@@ -20,10 +22,18 @@ network does not.
   layout, and no iOS focus zoom.
 - **Selection and transforms** — click, shift-click, marquee, move, resize from
   eight handles, and rotate, including on rotated elements.
-- **Eraser**, style editing (colour, fill, stroke width, dash, opacity), delete,
-  and a transaction-based undo/redo history.
+- **A style box that works before you draw.** Pick the pen, a shape, or the text
+  tool and the panel edits the *next* element: stroke and background colour,
+  fill, stroke width, dash, roughness, opacity, font, and arrowheads. Pick
+  something on the canvas and the same panel edits that selection. The choice
+  is remembered per device.
+- **Hamburger menu** for the board itself: undo/redo, theme (light, dark, or
+  system), canvas background presets, canvas layout (plain, dotted, or boxed
+  paper), PNG export of the current view, and a two-tap reset that is undoable.
+- **Eraser**, delete, and a transaction-based undo/redo history.
 - **Local persistence** through IndexedDB: 500 ms debounced autosave, a flush on
-  `pagehide`, and camera restoration on reload.
+  `pagehide`, and camera restoration on reload. Theme, paper, layout, and style
+  defaults persist separately in `localStorage`.
 - **Responsive chrome** measured against excalidraw.com: a vertical dock on
   desktop, a two-row dock plus a compact style bar on phones, and a
   height-snapped bottom sheet for the full style form. Every coarse-pointer
@@ -33,8 +43,8 @@ network does not.
 - **A seeded demo board** at `/b/demo` — title, hand-drawn underline, three
   filled flow boxes, arrows, and notes — so the first open is not a blank page.
 
-Not yet: real-time collaboration, accounts, cloud sync, export, image upload,
-and arrow binding. Those are the next phases in
+Not yet: real-time collaboration, accounts, cloud sync, image upload, and arrow
+binding. Those are the next phases in
 [`docs/superpowers/specs/2026-10-31-penpaper-design.md`](docs/superpowers/specs/2026-10-31-penpaper-design.md).
 The canvas already uses the element model and tombstone semantics those phases
 require.
@@ -91,11 +101,11 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 
 | Metric | Result | Gate |
 | --- | --- | --- |
-| Engine unit tests | 153 passing | all green |
-| Web unit tests | 12 passing | all green |
-| Browser tests | 19 passing | all green |
-| Median renderer frame body, 1,000 mixed shapes | 8.5 ms production | ≤ 16 ms |
-| Board route transfer, gzip | 166.3 KiB JS + CSS | ≤ 220 kB |
+| Engine unit tests | 165 passing | all green |
+| Web unit tests | 17 passing | all green |
+| Browser tests | 28 passing | all green |
+| Median renderer frame body, 1,000 mixed shapes | 7.3–8.4 ms production | ≤ 16 ms |
+| Board route transfer, gzip | 169.4 KiB JS + CSS | ≤ 220 kB |
 
 The frame measurement is the renderer's own body (cull, layout, paint commands),
 not `requestAnimationFrame` deltas, which are clamped to the display refresh rate

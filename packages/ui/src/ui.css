@@ -123,6 +123,197 @@
   height: 18px;
 }
 
+/* ------------------------------------------------------------------ menu */
+
+.pp-menu-root {
+  position: fixed;
+  z-index: 38;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+}
+
+.pp-menu-button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  color: var(--on-surface);
+  background: var(--island-bg);
+  box-shadow: var(--shadow-island);
+  cursor: pointer;
+}
+
+.pp-menu-button:hover {
+  background: var(--surface-mid);
+}
+
+.pp-menu-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.pp-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 276px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 80px - env(safe-area-inset-top));
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  background: var(--island-bg);
+  border-radius: 12px;
+  box-shadow: var(--shadow-island);
+}
+
+.pp-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--on-surface);
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pp-menu-item:hover:not(:disabled) {
+  background: var(--surface-low);
+}
+
+.pp-menu-item:active:not(:disabled) {
+  background: var(--surface-container);
+}
+
+.pp-menu-item:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pp-menu-item svg {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+}
+
+.pp-menu-item kbd {
+  margin-left: auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--on-surface-muted);
+  background: var(--surface-low);
+  font-family: inherit;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.pp-menu-danger {
+  color: var(--danger);
+}
+
+.pp-menu-sep {
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--surface-low);
+}
+
+.pp-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 7px 10px 8px;
+}
+
+.pp-menu-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--on-surface-muted);
+  text-transform: uppercase;
+}
+
+.pp-menu-segment {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-low);
+  border-radius: 8px;
+}
+
+.pp-menu-segment button {
+  flex: 1 1 0;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--on-surface);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pp-menu-segment button[aria-pressed="true"] {
+  color: var(--primary);
+  background: var(--surface-lowest);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07);
+}
+
+.pp-menu-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pp-menu-swatch {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.pp-menu-swatch[aria-pressed="true"] {
+  box-shadow:
+    0 0 0 2px var(--island-bg),
+    0 0 0 4px var(--primary);
+}
+
+/* "Follow the theme": half light paper, half the dark one. */
+.pp-menu-swatch-theme {
+  background: linear-gradient(135deg, #ffffff 0 50%, #232329 50% 100%);
+}
+
+@media (pointer: coarse) {
+  .pp-menu-item {
+    min-height: 44px;
+  }
+
+  .pp-menu-segment button {
+    height: 44px;
+    font-size: 13px;
+  }
+
+  .pp-menu-swatch {
+    width: 40px;
+    height: 40px;
+  }
+}
+
 /* ---------------------------------------------------------------- history */
 
 .pp-history {
@@ -235,6 +426,23 @@
   box-shadow:
     0 0 0 2px var(--island-bg),
     0 0 0 4px var(--primary);
+}
+
+/* Seven swatches plus two actions no longer fit a 390 px bar at 34 px, and a
+   thumb is larger than any of them anyway: draw 32 px but accept taps in a
+   44 px circle. */
+@media (pointer: coarse) {
+  .pp-quick-swatch {
+    width: 32px;
+    height: 32px;
+  }
+
+  .pp-quick-swatch::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+  }
 }
 
 .pp-quick-action {
