@@ -83,6 +83,33 @@ describe("InputController", () => {
     expect(el?.points.length).toBeGreaterThanOrEqual(3);
   });
 
+  it("does not put a selection box around a finished pen stroke", () => {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setTool("freedraw");
+
+    c.pointerDown({ ...basePointer, type: "pen", x: 100, y: 100 });
+    c.pointerMove({ ...basePointer, type: "pen", x: 160, y: 180 });
+    c.pointerUp({ ...basePointer, type: "pen", x: 160, y: 180 });
+
+    expect(deps.scene.size).toBe(1);
+    expect(c.selection).toEqual([]);
+    expect(deps.onSelectionChange).not.toHaveBeenCalled();
+  });
+
+  it("still selects a shape so it can be moved right away", () => {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setTool("rectangle");
+
+    c.pointerDown({ ...basePointer, x: 100, y: 100 });
+    c.pointerMove({ ...basePointer, x: 180, y: 160 });
+    c.pointerUp({ ...basePointer, x: 180, y: 160 });
+
+    const [el] = deps.scene.ordered();
+    expect(c.selection).toEqual([el?.id]);
+  });
+
   it("cancels an in-progress stroke when a second finger lands", () => {
     const deps = makeDeps();
     const c = new InputController(deps);

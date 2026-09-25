@@ -21,7 +21,9 @@ network does not.
 - **Text** with a real browser textarea overlay, IME composition, wrapped
   layout, and no iOS focus zoom.
 - **Selection and transforms** — click, shift-click, marquee, move, resize from
-  eight handles, and rotate, including on rotated elements.
+  eight handles, and rotate, including on rotated elements. A finished pen
+  stroke stays unselected, so fresh writing never grows resize handles and the
+  style panel keeps pointing at the next stroke.
 - **A style box that works before you draw.** Pick the pen, a shape, or the text
   tool and the panel edits the *next* element: stroke and background colour,
   fill, stroke width, dash, roughness, opacity, font, and arrowheads. Pick
@@ -101,9 +103,9 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 
 | Metric | Result | Gate |
 | --- | --- | --- |
-| Engine unit tests | 165 passing | all green |
+| Engine unit tests | 167 passing | all green |
 | Web unit tests | 17 passing | all green |
-| Browser tests | 28 passing | all green |
+| Browser tests | 29 passing | all green |
 | Median renderer frame body, 1,000 mixed shapes | 7.3–8.4 ms production | ≤ 16 ms |
 | Board route transfer, gzip | 169.4 KiB JS + CSS | ≤ 220 kB |
 

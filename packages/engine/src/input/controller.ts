@@ -619,7 +619,11 @@ export class InputController {
         });
       }
 
-      this.setSelection([el.id]);
+      // A pen stroke is ink, not an object to transform. Selecting it would
+      // put resize handles across fresh writing and point the style panel at
+      // the stroke instead of the next one. Shapes still select, so they can
+      // be moved or restyled straight after they are drawn.
+      if (el.type !== "freedraw") this.setSelection([el.id]);
       this.deps.onSceneChange?.();
     }
 

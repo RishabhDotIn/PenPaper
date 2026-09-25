@@ -90,6 +90,30 @@ test.describe("style before drawing", () => {
     );
   });
 
+  test("a pen stroke is not wrapped in a selection box", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openBoard(page);
+
+    await page.locator('[data-tool="freedraw"]').click();
+
+    const box = await page.getByRole("application").boundingBox();
+    expect(box).not.toBeNull();
+
+    await page.mouse.move(box!.x + 200, box!.y + 220);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + 300, box!.y + 300, { steps: 6 });
+    await page.mouse.move(box!.x + 240, box!.y + 380, { steps: 6 });
+    await page.mouse.up();
+
+    await expect(page.locator("main")).toHaveAttribute("data-elements", "1");
+
+    // Ink is not a transform target. Leaving it unselected keeps the panel on
+    // the next stroke's style and keeps resize handles off fresh writing.
+    const panel = page.locator(".pp-properties-desktop");
+    await expect(panel).toContainText("Style");
+    await expect(panel).not.toContainText("1 freedraw");
+  });
+
   test("the choice survives a reload and applies to the next board", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openBoard(page);
