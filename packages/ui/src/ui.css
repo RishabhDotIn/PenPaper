@@ -34,14 +34,9 @@
   display: none;
 }
 
-/* On a phone the ten tools are wider than the screen. Fading the trailing
-   edge is the only affordance a scrollbar cannot provide on touch. */
-@media (max-width: 1023px) {
-  .pp-dock {
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
-  }
-}
+/* The ten tools fit on every breakpoint: two rows on phones, one row above.
+   There is nothing off-screen to hint at, so no trailing fade. The old mask
+   dimmed the last tool — the eraser — and made it look disabled. */
 
 /* Below 520 px a single row cannot hold ten 44 px targets without hiding
    tools off-screen. Two rows of five are still a bottom bar, and every tool is
@@ -173,6 +168,19 @@
   background: var(--island-bg);
   border-radius: 12px;
   box-shadow: var(--shadow-island);
+  transform-origin: top left;
+  animation: pp-pop-in 140ms var(--ease-out);
+}
+
+@keyframes pp-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .pp-menu-item {
@@ -293,9 +301,17 @@
     0 0 0 4px var(--primary);
 }
 
-/* "Follow the theme": half light paper, half the dark one. */
+/* "Follow the theme": a clean light/dark split with a hairline seam. The old
+   diagonal gradient left a black crescent floating on white, which read as a
+   rendering bug next to the solid swatches. */
 .pp-menu-swatch-theme {
-  background: linear-gradient(135deg, #ffffff 0 50%, #232329 50% 100%);
+  background: linear-gradient(
+    90deg,
+    #f7f7fb 0 calc(50% - 1px),
+    rgba(0, 0, 0, 0.22) calc(50% - 1px) calc(50% + 1px),
+    #3a3a45 calc(50% + 1px) 100%
+  );
+  border-color: rgba(0, 0, 0, 0.24);
 }
 
 @media (pointer: coarse) {
@@ -393,7 +409,7 @@
 .pp-quick {
   position: fixed;
   z-index: 26;
-  bottom: calc(60px + env(safe-area-inset-bottom));
+  bottom: calc(68px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
 
@@ -402,8 +418,8 @@
   gap: 2px;
   width: max-content;
   max-width: calc(100vw - 16px);
-  height: 52px;
-  padding: 4px 8px;
+  height: 46px;
+  padding: 1px 8px;
   overflow-x: auto;
   overflow-y: hidden;
 
@@ -475,7 +491,7 @@
 @media (max-width: 400px) {
   .pp-quick {
     gap: 1px;
-    padding: 4px 6px;
+    padding: 1px 6px;
   }
 
   .pp-quick-strokes {
@@ -544,7 +560,9 @@
   display: block;
 }
 
-@media (min-width: 1024px) {
+/* A right-side panel from tablet width up. Below that it would eat too much of
+   the canvas, so touch widths keep the pill plus the sheet. */
+@media (min-width: 768px) {
   .pp-properties-desktop {
     position: fixed;
     z-index: 20;
@@ -598,9 +616,11 @@
 }
 
 .pp-label {
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   color: var(--on-surface-muted);
+  text-transform: uppercase;
 }
 
 .pp-swatches {
@@ -637,28 +657,39 @@
 .pp-segment {
   display: flex;
   gap: 2px;
-  padding: 2px;
+  padding: 3px;
   background: var(--surface-low);
-  border-radius: 6px;
+  border-radius: 9px;
 }
 
 .pp-segment button {
   display: grid;
   flex: 1 1 0;
   place-items: center;
-  height: 28px;
+  height: 30px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 7px;
   color: var(--on-surface);
   background: transparent;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 500;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.pp-segment button:hover {
+  background: var(--surface-mid);
 }
 
 .pp-segment button[aria-pressed="true"] {
   color: var(--primary);
-  background: var(--surface-lowest);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+  background: var(--island-bg);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgba(0, 0, 0, 0.04);
+  font-weight: 600;
 }
 
 .pp-row {
@@ -670,17 +701,18 @@
 
 .pp-select {
   width: 100%;
-  height: 28px;
-  padding: 0 6px;
+  height: 32px;
+  padding: 0 8px;
   border: 1px solid var(--surface-container);
-  border-radius: 4px;
+  border-radius: 8px;
   color: var(--on-surface);
-  background: var(--surface-lowest);
+  background: var(--island-bg);
   font-size: 12px;
 }
 
 .pp-range {
   width: 100%;
+  height: 20px;
   accent-color: var(--primary);
 }
 
@@ -745,9 +777,10 @@
 .pp-sheet {
   position: fixed;
   z-index: 40;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(430px, calc(100vw - 16px));
 
   display: flex;
   flex-direction: column;
@@ -755,9 +788,24 @@
   overflow: hidden;
 
   background: var(--island-bg);
-  border-radius: 16px 16px 0 0;
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--surface-low);
+  border-radius: 16px;
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.22),
+    0 2px 8px rgba(0, 0, 0, 0.08);
   transition: height 260ms var(--ease-out);
+  animation: pp-sheet-in 200ms var(--ease-out);
+}
+
+@keyframes pp-sheet-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 .pp-sheet-handle {
@@ -787,7 +835,7 @@
   align-items: center;
   justify-content: space-between;
   margin: 0 16px 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--on-surface);
 }
@@ -821,9 +869,38 @@
   overscroll-behavior: contain;
 }
 
+/* The default Windows scrollbar inside a floating card is the single cheapest
+   looking element in the sheet. Thin and translucent instead. */
+.pp-panel,
+.pp-sheet-content {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 130, 0.4) transparent;
+}
+
+.pp-panel::-webkit-scrollbar,
+.pp-sheet-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pp-panel::-webkit-scrollbar-thumb,
+.pp-sheet-content::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 130, 0.4);
+  border-radius: 999px;
+}
+
+.pp-panel::-webkit-scrollbar-track,
+.pp-sheet-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pp-sheet {
     transition: none;
+    animation: none;
+  }
+
+  .pp-menu {
+    animation: none;
   }
 }
 

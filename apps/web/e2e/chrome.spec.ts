@@ -243,7 +243,7 @@ test.describe("hamburger menu", () => {
 
 test.describe("compact style pill", () => {
   test("hugs its content and stays centred on a narrow window", async ({ page }) => {
-    await page.setViewportSize({ width: 900, height: 700 });
+    await page.setViewportSize({ width: 700, height: 700 });
     await openBoard(page);
     await page.locator('[data-tool="freedraw"]').click();
 
@@ -254,11 +254,38 @@ test.describe("compact style pill", () => {
     expect(box).not.toBeNull();
     // Content-width, not the old edge-to-edge band.
     expect(box!.width).toBeLessThan(420);
-    expect(Math.abs(box!.x + box!.width / 2 - 450)).toBeLessThan(2);
+    expect(Math.abs(box!.x + box!.width / 2 - 350)).toBeLessThan(2);
 
     const dock = await page.locator(".pp-dock").boundingBox();
     expect(dock).not.toBeNull();
     expect(dock!.y).toBeGreaterThan(box!.y + box!.height);
+  });
+
+  test("a tablet-width window gets the full panel, not a stretched sheet", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 900, height: 700 });
+    await openBoard(page);
+    await page.locator('[data-tool="rectangle"]').click();
+
+    await expect(page.locator(".pp-properties-desktop")).toBeVisible();
+    await expect(page.getByTestId("quick-properties")).toBeHidden();
+  });
+
+  test("the style sheet is a centred card on a narrow window", async ({ page }) => {
+    await page.setViewportSize({ width: 700, height: 700 });
+    await openBoard(page);
+    await page.locator('[data-tool="rectangle"]').click();
+
+    await page.getByTestId("quick-properties").getByRole("button", { name: "Style" }).click();
+
+    const sheet = page.locator(".pp-sheet");
+    await expect(sheet).toBeVisible();
+
+    const box = await sheet.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeLessThanOrEqual(430);
+    expect(Math.abs(box!.x + box!.width / 2 - 350)).toBeLessThan(2);
   });
 
   test.describe("360 px phone", () => {

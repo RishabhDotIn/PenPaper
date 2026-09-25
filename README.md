@@ -37,9 +37,10 @@ network does not.
   `pagehide`, and camera restoration on reload. Theme, paper, layout, and style
   defaults persist separately in `localStorage`.
 - **Responsive chrome** measured against excalidraw.com: a vertical dock on
-  desktop, a two-row dock plus a compact style bar on phones, and a
-  height-snapped bottom sheet for the full style form. Every coarse-pointer
-  target is at least 44 px.
+  desktop, a two-row dock plus a compact content-width style pill on phones, a
+  right-side style panel from tablet width up, and a floating style card for
+  the full form on small touch screens. Every coarse-pointer target is at least
+  44 px.
 - **Installable PWA** with offline app shell, manifest, maskable icons, and a
   service worker that serves the board offline after the first visit.
 - **A seeded demo board** at `/b/demo` — title, hand-drawn underline, three
@@ -105,7 +106,7 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 | --- | --- | --- |
 | Engine unit tests | 167 passing | all green |
 | Web unit tests | 17 passing | all green |
-| Browser tests | 31 passing | all green |
+| Browser tests | 33 passing | all green |
 | Median renderer frame body, 1,000 mixed shapes | 7.3–8.4 ms production | ≤ 16 ms |
 | Board route transfer, gzip | 169.4 KiB JS + CSS | ≤ 220 kB |
 

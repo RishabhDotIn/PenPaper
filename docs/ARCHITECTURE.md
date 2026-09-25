@@ -250,8 +250,10 @@ not on synthetic scores.
 - Coarse pointers get 44 px minimum targets; hit testing uses a 22 px radius for
   touch and 8 px for a mouse.
 - The phone dock is horizontal; the desktop dock is vertical. The properties
-  panel becomes a bottom sheet that snaps by **height**, not transform, so its
-  scroll area stays inside the visible viewport above the dock.
+  panel becomes a bottom sheet on small touch widths — a centred card above an
+  8 px margin, not a full-width slab — that snaps by **height**, not transform,
+  so its scroll area stays inside the visible viewport above the dock. From
+  768 px up the full panel sits on the right instead.
 - The compact style pill above the dock hugs its content rather than spanning
   the viewport, so a tablet or a narrow desktop window does not get the
   edge-to-edge band that only made sense as a phone bar.

@@ -164,22 +164,25 @@ export function BoardChrome({
       <div className="pp-properties-mobile">
         {showStyle ? (
           <>
-            <QuickProperties
-              value={styleValue[0]!}
-              mode={selection.length > 0 ? "selection" : "default"}
-              onStroke={(strokeColor) =>
-                selection.length > 0
-                  ? onPatch({ strokeColor })
-                  : onStyleDefaultsChange({ strokeColor })
-              }
-              onOpenStyles={() => setStylesOpen(true)}
-              onDelete={selection.length > 0 ? onDelete : undefined}
-            />
+            {stylesOpen ? null : (
+              <QuickProperties
+                value={styleValue[0]!}
+                mode={selection.length > 0 ? "selection" : "default"}
+                onStroke={(strokeColor) =>
+                  selection.length > 0
+                    ? onPatch({ strokeColor })
+                    : onStyleDefaultsChange({ strokeColor })
+                }
+                onOpenStyles={() => setStylesOpen(true)}
+                onDelete={selection.length > 0 ? onDelete : undefined}
+              />
+            )}
             {stylesOpen ? (
               <BottomSheet label="Style" initialSnap="half" onClose={() => setStylesOpen(false)}>
                 <PropertiesPanel
                   selection={styleValue}
                   onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}
+                  onDelete={selection.length > 0 ? onDelete : undefined}
                   showTitle={false}
                 />
               </BottomSheet>
