@@ -105,7 +105,7 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 | --- | --- | --- |
 | Engine unit tests | 167 passing | all green |
 | Web unit tests | 17 passing | all green |
-| Browser tests | 29 passing | all green |
+| Browser tests | 31 passing | all green |
 | Median renderer frame body, 1,000 mixed shapes | 7.3–8.4 ms production | ≤ 16 ms |
 | Board route transfer, gzip | 169.4 KiB JS + CSS | ≤ 220 kB |
 

@@ -13,14 +13,18 @@ export interface QuickPropertiesProps {
 }
 
 /**
- * The phone's always-available style bar.
+ * The compact style bar.
  *
  * A full-height sheet used to open on every selection — including immediately
- * after every pen stroke — which hid half the board while drawing. This bar
+ * after every pen stroke — which hid half the board while drawing. This pill
  * keeps the two edits that matter in the middle of a sketch (colour, delete)
  * one tap away and puts the rest behind an explicit "Style" button. With a
  * drawing tool active it edits the style of the *next* element, so a colour
  * can be chosen before the stroke exists.
+ *
+ * The pill hugs its content instead of spanning the viewport: the same
+ * component is used on phones, tablets, and narrow desktop windows, where a
+ * full-width bar would leave a wide empty band.
  */
 export function QuickProperties({
   value,
@@ -48,6 +52,8 @@ export function QuickProperties({
           />
         ))}
       </div>
+
+      <span className="pp-quick-sep" aria-hidden="true" />
 
       {onDelete ? (
         <button

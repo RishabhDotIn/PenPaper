@@ -252,6 +252,9 @@ not on synthetic scores.
 - The phone dock is horizontal; the desktop dock is vertical. The properties
   panel becomes a bottom sheet that snaps by **height**, not transform, so its
   scroll area stays inside the visible viewport above the dock.
+- The compact style pill above the dock hugs its content rather than spanning
+  the viewport, so a tablet or a narrow desktop window does not get the
+  edge-to-edge band that only made sense as a phone bar.
 - A blank board opens with the pen selected on coarse pointers: "select" is a
   dead tap when there is nothing to select.
 

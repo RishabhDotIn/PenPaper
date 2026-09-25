@@ -241,6 +241,54 @@ test.describe("hamburger menu", () => {
   });
 });
 
+test.describe("compact style pill", () => {
+  test("hugs its content and stays centred on a narrow window", async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 700 });
+    await openBoard(page);
+    await page.locator('[data-tool="freedraw"]').click();
+
+    const pill = page.getByTestId("quick-properties");
+    await expect(pill).toBeVisible();
+
+    const box = await pill.boundingBox();
+    expect(box).not.toBeNull();
+    // Content-width, not the old edge-to-edge band.
+    expect(box!.width).toBeLessThan(420);
+    expect(Math.abs(box!.x + box!.width / 2 - 450)).toBeLessThan(2);
+
+    const dock = await page.locator(".pp-dock").boundingBox();
+    expect(dock).not.toBeNull();
+    expect(dock!.y).toBeGreaterThan(box!.y + box!.height);
+  });
+
+  test.describe("360 px phone", () => {
+    test.use({
+      viewport: { width: 360, height: 780 },
+      isMobile: true,
+      hasTouch: true,
+      deviceScaleFactor: 2,
+    });
+
+    test("the pill and dock fit without horizontal overflow", async ({ page }) => {
+      await openBoard(page);
+
+      const pill = page.getByTestId("quick-properties");
+      await expect(pill).toBeVisible();
+
+      const box = await pill.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(360);
+
+      const overflow = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }));
+      expect(overflow.scroll).toBe(overflow.client);
+    });
+  });
+});
+
 test.describe("phone chrome", () => {
   test.use({
     viewport: { width: 390, height: 844 },

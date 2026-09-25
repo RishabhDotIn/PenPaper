@@ -380,68 +380,120 @@
 /* ------------------------------------------------------- quick properties */
 
 /*
- * The phone's selection bar. It sits one gap above the dock and only covers
- * ~52 px, so a stroke can be recoloured without hiding the board. The full
- * panel is behind "Style".
+ * The compact style pill.
+ *
+ * It used to stretch from edge to edge, which looked broken on anything wider
+ * than a phone: a handful of swatches floating in a metre of empty bar. It now
+ * hugs its content and stays centred one gap above the dock, so the same
+ * component reads as deliberate on a phone, a tablet, and a narrow window.
+ *
+ * The full panel is still behind "Style"; this pill is only the two edits that
+ * matter mid-sketch.
  */
 .pp-quick {
   position: fixed;
   z-index: 26;
-  right: 8px;
   bottom: calc(60px + env(safe-area-inset-bottom));
-  left: 8px;
+  left: 50%;
+  transform: translateX(-50%);
 
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
+  gap: 2px;
+  width: max-content;
+  max-width: calc(100vw - 16px);
   height: 52px;
-  padding: 4px 6px;
+  padding: 4px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
 
   background: var(--island-bg);
   border-radius: 12px;
   box-shadow: var(--shadow-island);
+  scrollbar-width: none;
+}
+
+.pp-quick::-webkit-scrollbar {
+  display: none;
 }
 
 .pp-quick-strokes {
   display: flex;
-  flex: 1 1 auto;
-  justify-content: center;
+  align-items: center;
   gap: 6px;
-  min-width: 0;
+  padding: 0 2px;
 }
 
 .pp-quick-swatch {
   position: relative;
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   padding: 0;
-  border: 1px solid rgba(0, 0, 0, 0.14);
+  /* The light ink (#e3e3e8) is otherwise invisible against the white island. */
+  border: 1px solid rgba(0, 0, 0, 0.16);
   border-radius: 50%;
   cursor: pointer;
 }
 
 .pp-quick-swatch[aria-pressed="true"] {
+  border-color: transparent;
   box-shadow:
     0 0 0 2px var(--island-bg),
     0 0 0 4px var(--primary);
 }
 
+/* A hairline, not a heavy divider: the pill should read as one control. */
+.pp-quick-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--on-surface-muted);
+  opacity: 0.25;
+}
+
 /* Seven swatches plus two actions no longer fit a 390 px bar at 34 px, and a
-   thumb is larger than any of them anyway: draw 32 px but accept taps in a
+   thumb is larger than any of them anyway: draw 30 px but accept taps in a
    44 px circle. */
 @media (pointer: coarse) {
   .pp-quick-swatch {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
   }
 
   .pp-quick-swatch::before {
     content: "";
     position: absolute;
-    inset: -6px;
+    inset: -7px;
     border-radius: 50%;
+  }
+}
+
+/* The smallest phones: shrink the swatches and the gutters rather than
+   stretching the pill into an edge-to-edge bar. */
+@media (max-width: 400px) {
+  .pp-quick {
+    gap: 1px;
+    padding: 4px 6px;
+  }
+
+  .pp-quick-strokes {
+    gap: 4px;
+    padding: 0;
+  }
+
+  .pp-quick-swatch {
+    width: 28px;
+    height: 28px;
+  }
+
+  .pp-quick-sep {
+    margin: 0 3px;
+  }
+
+  .pp-quick-action {
+    padding: 0 7px;
   }
 }
 
