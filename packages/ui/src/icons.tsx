@@ -91,3 +91,27 @@ function paths(tool: Tool): ReactElement {
       );
   }
 }
+
+/**
+ * Style/palette trigger. It lives beside the hamburger on touch widths, where
+ * the full properties panel is behind a popup rather than always on screen.
+ */
+export function PaletteIcon(): ReactElement {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M12 3.2a8.8 8.8 0 1 0 0 17.6c1.2 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-1.9 2-1.9h1.4a4.4 4.4 0 0 0 4.4-4.4c0-3.7-4-6.7-8.8-6.7Z" />
+      <circle cx="7.6" cy="10.4" r="1" />
+      <circle cx="10.7" cy="7.2" r="1" />
+      <circle cx="14.8" cy="8.2" r="1" />
+    </svg>
+  );
+}

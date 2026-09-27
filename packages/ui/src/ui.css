@@ -120,24 +120,35 @@
 
 /* ------------------------------------------------------------------ menu */
 
+/* The left island: hamburger, plus the style trigger on touch widths. One
+   island instead of two so the top edge stays quiet. */
 .pp-menu-root {
   position: fixed;
   z-index: 38;
   top: max(12px, env(safe-area-inset-top));
   left: 12px;
+
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+
+  background: var(--island-bg);
+  border-radius: 10px;
+  box-shadow: var(--shadow-island);
 }
 
+/* A mouse does not need a 44 px target; 32 px matches the history island. */
 .pp-menu-button {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 7px;
   color: var(--on-surface);
-  background: var(--island-bg);
-  box-shadow: var(--shadow-island);
+  background: transparent;
   cursor: pointer;
 }
 
@@ -150,16 +161,18 @@
   height: 20px;
 }
 
-/* A mouse does not need a 44 px island, and the smaller one lines up with the
-   history island below. Coarse pointers keep the full target. */
+/* The style trigger only exists where the properties panel is a popup. */
 @media (min-width: 768px) {
-  .pp-menu-button {
-    width: 40px;
-    height: 40px;
+  .pp-menu-style {
+    display: none;
   }
 }
 
 @media (pointer: coarse) {
+  .pp-menu-root {
+    padding: 0 2px;
+  }
+
   .pp-menu-button {
     width: 44px;
     height: 44px;
@@ -317,17 +330,28 @@
     0 0 0 4px var(--primary);
 }
 
-/* "Follow the theme": a clean light/dark split with a hairline seam. The old
-   diagonal gradient left a black crescent floating on white, which read as a
-   rendering bug next to the solid swatches. */
-.pp-menu-swatch-theme {
-  background: linear-gradient(
-    90deg,
-    #f7f7fb 0 calc(50% - 1px),
-    rgba(0, 0, 0, 0.22) calc(50% - 1px) calc(50% + 1px),
-    #3a3a45 calc(50% + 1px) 100%
-  );
-  border-color: rgba(0, 0, 0, 0.24);
+/* The theme-default option is a text chip, not a half-black circle. The split
+   swatch read as an unfinished render at 28 px and sat next to a white swatch
+   it barely differed from. "Auto" says the same thing in words. */
+.pp-menu-auto {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 999px;
+  color: var(--on-surface);
+  background: var(--island-bg);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pp-menu-auto[aria-pressed="true"] {
+  border-color: transparent;
+  color: var(--primary);
+  box-shadow:
+    0 0 0 2px var(--island-bg),
+    0 0 0 4px var(--primary);
 }
 
 @media (pointer: coarse) {
@@ -343,6 +367,12 @@
   .pp-menu-swatch {
     width: 40px;
     height: 40px;
+  }
+
+  .pp-menu-auto {
+    height: 40px;
+    padding: 0 12px;
+    font-size: 12px;
   }
 }
 
@@ -420,163 +450,6 @@
   }
 }
 
-/* ------------------------------------------------------- quick properties */
-
-/*
- * The compact style pill.
- *
- * It used to stretch from edge to edge, which looked broken on anything wider
- * than a phone: a handful of swatches floating in a metre of empty bar. It now
- * hugs its content and stays centred one gap above the dock, so the same
- * component reads as deliberate on a phone, a tablet, and a narrow window.
- *
- * The full panel is still behind "Style"; this pill is only the two edits that
- * matter mid-sketch.
- */
-.pp-quick {
-  position: fixed;
-  z-index: 26;
-  bottom: calc(68px + env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  width: max-content;
-  max-width: calc(100vw - 16px);
-  height: 46px;
-  padding: 1px 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-
-  background: var(--island-bg);
-  border-radius: 12px;
-  box-shadow: var(--shadow-island);
-  scrollbar-width: none;
-}
-
-.pp-quick::-webkit-scrollbar {
-  display: none;
-}
-
-.pp-quick-strokes {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 2px;
-}
-
-.pp-quick-swatch {
-  position: relative;
-  flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  /* The light ink (#e3e3e8) is otherwise invisible against the white island. */
-  border: 1px solid rgba(0, 0, 0, 0.16);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.pp-quick-swatch[aria-pressed="true"] {
-  border-color: transparent;
-  box-shadow:
-    0 0 0 2px var(--island-bg),
-    0 0 0 4px var(--primary);
-}
-
-/* A hairline, not a heavy divider: the pill should read as one control. */
-.pp-quick-sep {
-  flex: 0 0 auto;
-  width: 1px;
-  height: 22px;
-  margin: 0 4px;
-  background: var(--on-surface-muted);
-  opacity: 0.25;
-}
-
-/* Seven swatches plus two actions no longer fit a 390 px bar at 34 px, and a
-   thumb is larger than any of them anyway: draw 30 px but accept taps in a
-   44 px circle. */
-@media (pointer: coarse) {
-  .pp-quick-swatch {
-    width: 30px;
-    height: 30px;
-  }
-
-  .pp-quick-swatch::before {
-    content: "";
-    position: absolute;
-    inset: -7px;
-    border-radius: 50%;
-  }
-}
-
-/* The smallest phones: shrink the swatches and the gutters rather than
-   stretching the pill into an edge-to-edge bar. */
-@media (max-width: 400px) {
-  .pp-quick {
-    gap: 1px;
-    padding: 1px 6px;
-  }
-
-  .pp-quick-strokes {
-    gap: 4px;
-    padding: 0;
-  }
-
-  .pp-quick-swatch {
-    width: 28px;
-    height: 28px;
-  }
-
-  .pp-quick-sep {
-    margin: 0 3px;
-  }
-
-  .pp-quick-action {
-    padding: 0 7px;
-  }
-}
-
-.pp-quick-action {
-  position: relative;
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  height: 44px;
-  min-width: 44px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  color: var(--on-surface);
-  background: transparent;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.pp-quick-action:hover {
-  background: var(--surface-low);
-}
-
-.pp-quick-delete {
-  color: var(--danger);
-}
-
-.pp-quick-action svg {
-  width: 18px;
-  height: 18px;
-}
-
-/* Two dock rows on a small phone push the bar up by one row. */
-@media (max-width: 519px) {
-  .pp-quick {
-    bottom: calc(116px + env(safe-area-inset-bottom));
-  }
-}
-
 /* ------------------------------------------------------- properties panel */
 
 .pp-properties-desktop {
@@ -588,7 +461,7 @@
 }
 
 /* A right-side panel from tablet width up. Below that it would eat too much of
-   the canvas, so touch widths keep the pill plus the sheet. */
+   the canvas, so touch widths get the style button in the top bar and a card. */
 @media (min-width: 768px) {
   .pp-properties-desktop {
     position: fixed;
@@ -607,7 +480,7 @@
 .pp-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   width: 224px;
   max-height: 82vh;
   padding: 12px;
@@ -618,11 +491,11 @@
   box-shadow: var(--shadow-island);
 }
 
-/* Inside the sheet the panel is a flow child, not a floating island. */
+/* Inside the card the panel is a flow child, not a floating island. */
 .pp-sheet .pp-panel {
   width: auto;
   max-height: none;
-  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+  padding: 2px 14px calc(14px + env(safe-area-inset-bottom));
   background: transparent;
   box-shadow: none;
 }
@@ -632,28 +505,26 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--on-surface-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .pp-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
+/* Sentence case at 11 px: a stack of tracked uppercase labels was most of what
+   made the card feel like a settings form. */
 .pp-label {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--on-surface-muted);
-  text-transform: uppercase;
 }
 
 .pp-swatches {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 5px;
 }
 
 .pp-swatch {
@@ -767,7 +638,7 @@
    with a thumb. */
 @media (pointer: coarse) {
   .pp-swatches {
-    gap: 6px;
+    gap: 4px;
   }
 
   .pp-swatch {
@@ -808,16 +679,16 @@
 
   display: flex;
   flex-direction: column;
-  height: 62vh;
+  height: auto;
+  max-height: calc(100dvh - 72px - env(safe-area-inset-bottom));
   overflow: hidden;
 
   background: var(--island-bg);
   border: 1px solid var(--surface-low);
-  border-radius: 16px;
+  border-radius: 18px;
   box-shadow:
     0 18px 48px rgba(0, 0, 0, 0.22),
     0 2px 8px rgba(0, 0, 0, 0.08);
-  transition: height 260ms var(--ease-out);
   animation: pp-sheet-in 200ms var(--ease-out);
 }
 
@@ -832,48 +703,39 @@
   }
 }
 
+/* A 44 px header holds the grabber and the close button; the card then sizes
+   to its content instead of clipping the last section behind a scrollbar. */
 .pp-sheet-handle {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  height: 28px;
-  cursor: grab;
-  touch-action: none;
-}
-
-.pp-sheet-handle:active {
-  cursor: grabbing;
+  height: 44px;
+  pointer-events: none;
 }
 
 .pp-sheet-handle::after {
   content: "";
-  width: 36px;
-  height: 4px;
+  width: 32px;
+  height: 3px;
   border-radius: 999px;
   background: var(--on-surface-muted);
-  opacity: 0.45;
-}
-
-.pp-sheet-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 16px 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--on-surface);
+  opacity: 0.35;
 }
 
 .pp-sheet-close {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  z-index: 2;
+
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  margin-right: -8px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
-  color: var(--on-surface);
+  border-radius: 10px;
+  color: var(--on-surface-muted);
   background: transparent;
   cursor: pointer;
 }
@@ -889,6 +751,7 @@
 
 .pp-sheet-content {
   flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -919,7 +782,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .pp-sheet {
-    transition: none;
     animation: none;
   }
 

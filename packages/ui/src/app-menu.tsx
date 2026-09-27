@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 
 export type ThemeChoice = "light" | "dark" | "system";
 export type CanvasLayout = "none" | "dots" | "lines";
@@ -26,6 +26,9 @@ const LAYOUTS: ReadonlyArray<{ value: CanvasLayout; label: string; hint: string 
   { value: "lines", label: "Box", hint: "Graph paper" },
 ];
 
+/** Null is "follow the theme"; it renders as a chip, not a split circle. */
+const PAPER_BACKGROUNDS = CANVAS_BACKGROUNDS.filter((option) => option.value !== null);
+
 export interface AppMenuProps {
   theme: ThemeChoice;
   onThemeChange: (theme: ThemeChoice) => void;
@@ -39,6 +42,11 @@ export interface AppMenuProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  /**
+   * Another action rendered inside the same island, e.g. the style trigger on
+   * touch widths. Keeping it here means the left edge is one island, not two.
+   */
+  trailing?: ReactNode;
 }
 
 /**
@@ -62,6 +70,7 @@ export function AppMenu({
   onRedo,
   canUndo,
   canRedo,
+  trailing,
 }: AppMenuProps) {
   const [open, setOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -120,6 +129,8 @@ export function AppMenu({
         <HamburgerIcon />
       </button>
 
+      {trailing}
+
       {open ? (
         <div
           className="pp-menu"
@@ -175,11 +186,20 @@ export function AppMenu({
           <div className="pp-menu-section">
             <span className="pp-menu-label">Canvas background</span>
             <div className="pp-menu-swatches" role="group" aria-label="Canvas background">
-              {CANVAS_BACKGROUNDS.map((option) => (
+              <button
+                type="button"
+                className="pp-menu-auto"
+                aria-label="Theme default"
+                aria-pressed={background === null}
+                onClick={() => onBackgroundChange(null)}
+              >
+                Auto
+              </button>
+              {PAPER_BACKGROUNDS.map((option) => (
                 <button
                   key={option.label}
                   type="button"
-                  className={`pp-menu-swatch${option.value === null ? " pp-menu-swatch-theme" : ""}`}
+                  className="pp-menu-swatch"
                   style={option.value ? { background: option.value } : undefined}
                   aria-label={option.label}
                   aria-pressed={background === option.value}

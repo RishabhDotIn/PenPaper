@@ -3,15 +3,15 @@
 import {
   AppMenu,
   BottomSheet,
+  PaletteIcon,
   PropertiesPanel,
-  QuickProperties,
   Toolbar,
   type CanvasLayout,
   type ThemeChoice,
 } from "@penpaper/ui";
 import { createElement, type StyleDefaults, type Tool } from "@penpaper/engine";
 import type { Element, ElementType } from "@penpaper/shared";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 export interface BoardMenuProps {
   theme: ThemeChoice;
@@ -90,12 +90,6 @@ export function BoardChrome({
 
   const styleValue = selection.length > 0 ? selection : [preview];
 
-  // Losing the selection (a tap on empty canvas, a delete) must also dismiss
-  // the sheet; leaving it open over an empty canvas hides the board for nothing.
-  useEffect(() => {
-    if (!showStyle) setStylesOpen(false);
-  }, [showStyle]);
-
   return (
     <>
       <AppMenu
@@ -104,6 +98,19 @@ export function BoardChrome({
         onRedo={onRedo}
         canUndo={canUndo}
         canRedo={canRedo}
+        trailing={
+          <button
+            type="button"
+            className="pp-menu-button pp-menu-style"
+            data-testid="open-styles"
+            aria-label="Style"
+            aria-haspopup="dialog"
+            aria-expanded={stylesOpen}
+            onClick={() => setStylesOpen((open) => !open)}
+          >
+            <PaletteIcon />
+          </button>
+        }
       />
 
       <div className="pp-history" data-testid="history-controls" role="group" aria-label="History">
@@ -149,32 +156,15 @@ export function BoardChrome({
       ) : null}
 
       <div className="pp-properties-mobile">
-        {showStyle ? (
-          <>
-            {stylesOpen ? null : (
-              <QuickProperties
-                value={styleValue[0]!}
-                mode={selection.length > 0 ? "selection" : "default"}
-                onStroke={(strokeColor) =>
-                  selection.length > 0
-                    ? onPatch({ strokeColor })
-                    : onStyleDefaultsChange({ strokeColor })
-                }
-                onOpenStyles={() => setStylesOpen(true)}
-                onDelete={selection.length > 0 ? onDelete : undefined}
-              />
-            )}
-            {stylesOpen ? (
-              <BottomSheet label="Style" initialSnap="half" onClose={() => setStylesOpen(false)}>
-                <PropertiesPanel
-                  selection={styleValue}
-                  onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}
-                  onDelete={selection.length > 0 ? onDelete : undefined}
-                  showTitle={false}
-                />
-              </BottomSheet>
-            ) : null}
-          </>
+        {stylesOpen ? (
+          <BottomSheet label="Style" onClose={() => setStylesOpen(false)}>
+            <PropertiesPanel
+              selection={styleValue}
+              onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}
+              onDelete={selection.length > 0 ? onDelete : undefined}
+              showTitle={false}
+            />
+          </BottomSheet>
         ) : null}
       </div>
     </>

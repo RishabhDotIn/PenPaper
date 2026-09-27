@@ -207,6 +207,26 @@ test.describe("hamburger menu", () => {
     expect(reloaded.center).toEqual([255, 249, 219]);
   });
 
+  test("the theme default is a word chip and restores the theme paper", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openBoard(page);
+
+    const menu = await openMenu(page);
+    // The old half-black circle is gone.
+    await expect(menu.locator(".pp-menu-swatch-theme")).toHaveCount(0);
+    const auto = menu.getByRole("button", { name: "Theme default" });
+    await expect(auto).toHaveText("Auto");
+    await expect(auto).toHaveAttribute("aria-pressed", "true");
+
+    await menu.getByRole("button", { name: "Blue paper" }).click();
+    expect((await canvasStats(page)).center).toEqual([231, 245, 255]);
+    await expect(auto).toHaveAttribute("aria-pressed", "false");
+
+    await auto.click();
+    expect((await canvasStats(page)).center).toEqual([255, 255, 255]);
+    await expect(auto).toHaveAttribute("aria-pressed", "true");
+  });
+
   test("reset clears the board in two taps and undo brings it back", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openBoard(page);
@@ -241,43 +261,11 @@ test.describe("hamburger menu", () => {
   });
 });
 
-test.describe("compact style pill", () => {
-  test("hugs its content and stays centred on a narrow window", async ({ page }) => {
+test.describe("style sheet", () => {
+  test("a narrow window opens a content-sized card, not a half-screen slab", async ({ page }) => {
     await page.setViewportSize({ width: 700, height: 700 });
     await openBoard(page);
-    await page.locator('[data-tool="freedraw"]').click();
-
-    const pill = page.getByTestId("quick-properties");
-    await expect(pill).toBeVisible();
-
-    const box = await pill.boundingBox();
-    expect(box).not.toBeNull();
-    // Content-width, not the old edge-to-edge band.
-    expect(box!.width).toBeLessThan(420);
-    expect(Math.abs(box!.x + box!.width / 2 - 350)).toBeLessThan(2);
-
-    const dock = await page.locator(".pp-dock").boundingBox();
-    expect(dock).not.toBeNull();
-    expect(dock!.y).toBeGreaterThan(box!.y + box!.height);
-  });
-
-  test("a tablet-width window gets the full panel, not a stretched sheet", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 900, height: 700 });
-    await openBoard(page);
-    await page.locator('[data-tool="rectangle"]').click();
-
-    await expect(page.locator(".pp-properties-desktop")).toBeVisible();
-    await expect(page.getByTestId("quick-properties")).toBeHidden();
-  });
-
-  test("the style sheet is a centred card on a narrow window", async ({ page }) => {
-    await page.setViewportSize({ width: 700, height: 700 });
-    await openBoard(page);
-    await page.locator('[data-tool="rectangle"]').click();
-
-    await page.getByTestId("quick-properties").getByRole("button", { name: "Style" }).click();
+    await page.getByTestId("open-styles").click();
 
     const sheet = page.locator(".pp-sheet");
     await expect(sheet).toBeVisible();
@@ -286,6 +274,19 @@ test.describe("compact style pill", () => {
     expect(box).not.toBeNull();
     expect(box!.width).toBeLessThanOrEqual(430);
     expect(Math.abs(box!.x + box!.width / 2 - 350)).toBeLessThan(2);
+    expect(box!.height).toBeLessThan(560);
+
+    // The card is complete: the old fixed 50 vh sheet clipped the last section.
+    await expect(sheet).toContainText("Opacity");
+  });
+
+  test("a tablet-width window gets the full panel, not a card", async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 700 });
+    await openBoard(page);
+    await page.locator('[data-tool="rectangle"]').click();
+
+    await expect(page.locator(".pp-properties-desktop")).toBeVisible();
+    await expect(page.getByTestId("open-styles")).toBeHidden();
   });
 
   test.describe("360 px phone", () => {
@@ -296,16 +297,25 @@ test.describe("compact style pill", () => {
       deviceScaleFactor: 2,
     });
 
-    test("the pill and dock fit without horizontal overflow", async ({ page }) => {
+    test("the dock fits and the sheet keeps its swatches on one row", async ({ page }) => {
       await openBoard(page);
 
-      const pill = page.getByTestId("quick-properties");
-      await expect(pill).toBeVisible();
+      const dock = await page.locator(".pp-dock").boundingBox();
+      expect(dock).not.toBeNull();
+      expect(dock!.x).toBeGreaterThanOrEqual(0);
+      expect(dock!.x + dock!.width).toBeLessThanOrEqual(360);
 
-      const box = await pill.boundingBox();
-      expect(box).not.toBeNull();
-      expect(box!.x).toBeGreaterThanOrEqual(0);
-      expect(box!.x + box!.width).toBeLessThanOrEqual(360);
+      await page.getByTestId("open-styles").click();
+      const sheet = page.locator(".pp-sheet");
+      await expect(sheet).toBeVisible();
+      expect(await sheet.boundingBox()).not.toBeNull();
+
+      // Seven 40 px swatches in a 316 px content box: one row, no tall card.
+      const wrap = await page.evaluate(() => {
+        const group = document.querySelector(".pp-sheet .pp-swatches");
+        return group ? group.getBoundingClientRect().height : 0;
+      });
+      expect(wrap).toBeLessThan(60);
 
       const overflow = await page.evaluate(() => ({
         scroll: document.documentElement.scrollWidth,
@@ -324,20 +334,27 @@ test.describe("phone chrome", () => {
     deviceScaleFactor: 2,
   });
 
-  test("the colour bar is usable before the first stroke", async ({ page }) => {
+  test("the style card opens from the top bar and edits the next stroke", async ({ page }) => {
     await openBoard(page);
 
-    // The phone opens with the pen, so the quick style bar is already there.
-    const quick = page.getByTestId("quick-properties");
-    await expect(quick).toBeVisible();
+    // The persistent colour bar is gone: the bottom edge is only the dock.
+    await expect(page.getByTestId("quick-properties")).toHaveCount(0);
+    const dock = await page.locator(".pp-dock").boundingBox();
+    expect(dock).not.toBeNull();
+    expect(dock!.y + dock!.height).toBeGreaterThanOrEqual(836);
+    expect(844 - dock!.y).toBeLessThan(112);
 
-    const red = quick.getByRole("button", { name: "Stroke #e03131" });
+    await page.getByTestId("open-styles").click();
+    const sheet = page.locator(".pp-sheet");
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toContainText("Stroke");
+
+    const red = sheet.getByRole("button", { name: "Stroke #e03131" });
     await red.click();
     await expect(red).toHaveAttribute("aria-pressed", "true");
 
-    await quick.getByRole("button", { name: "Style" }).click();
-    await expect(page.locator(".pp-sheet")).toBeVisible();
-    await expect(page.locator(".pp-sheet")).toContainText("Style");
+    await page.getByRole("button", { name: "Close styles" }).click();
+    await expect(sheet).toHaveCount(0);
   });
 
   test("the menu fits the screen and stays reachable", async ({ page }) => {

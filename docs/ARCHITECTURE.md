@@ -135,12 +135,13 @@ state:
 - **History** — undo and redo in a two-button island, bottom-left on desktop
   and top-right on small screens, sized to match the menu island.
 - **Toolbar** — the active tool, mirrored from `BoardScreen`.
-- **Style panel** — `PropertiesPanel` on desktop, `QuickProperties` plus a
-  `BottomSheet` on phones. It edits one of two targets: the selected elements,
-  or the style defaults stamped onto the next element the active tool creates.
-  `InputController.setStyle()` holds that default; the panel receives a
-  zero-sized preview element built from it, so the same form code serves both
-  cases without a second component.
+- **Style panel** — `PropertiesPanel` in a right rail from 768 px up. Below that
+  the palette button in the top-left island opens `BottomSheet`, a content-sized
+  card that scrolls only when a tall selection needs it. It edits one of two
+  targets: the selected elements, or the style defaults stamped onto the next
+  element the active tool creates. `InputController.setStyle()` holds that
+  default; the panel receives a zero-sized preview element built from it, so the
+  same form code serves both cases without a second component.
 - **`AppMenu`** — the hamburger popover: undo/redo, theme, paper colour, layout,
   PNG export, and reset. Appearance actions keep the popover open so themes can
   be compared; one-shot and destructive actions close it.
@@ -254,13 +255,14 @@ not on synthetic scores.
 - Coarse pointers get 44 px minimum targets; hit testing uses a 22 px radius for
   touch and 8 px for a mouse.
 - The phone dock is horizontal; the desktop dock is vertical. The properties
-  panel becomes a bottom sheet on small touch widths — a centred card above an
-  8 px margin, not a full-width slab — that snaps by **height**, not transform,
-  so its scroll area stays inside the visible viewport above the dock. From
-  768 px up the full panel sits on the right instead.
-- The compact style pill above the dock hugs its content rather than spanning
-  the viewport, so a tablet or a narrow desktop window does not get the
-  edge-to-edge band that only made sense as a phone bar.
+  panel becomes a content-sized card on small touch widths — a centred popup
+  above an 8 px margin, not a half-screen slab. It has no drag handle and no
+  fixed height: it grows with its sections and only scrolls for a tall
+  selection. From 768 px up the full panel sits on the right instead.
+- The bottom edge holds the dock and nothing else. The old colour pill floated
+  above it and covered another 54 px of canvas; the palette now lives beside the
+  hamburger in the top-left island, so colours are still one tap away without a
+  permanent second bar.
 - A blank board opens with the pen selected on coarse pointers: "select" is a
   dead tap when there is nothing to select.
 
