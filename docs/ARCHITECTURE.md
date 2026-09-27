@@ -128,8 +128,12 @@ than 16 px, which stops iOS from zooming the page on focus, and it lifts with
 
 ### Chrome ownership
 
-`BoardChrome` renders three separate islands and owns no board state:
+`BoardChrome` renders only floating islands over the canvas — no title bar and
+no permanent wordmark, the same restraint as excalidraw.com. It owns no board
+state:
 
+- **History** — undo and redo in a two-button island, bottom-left on desktop
+  and top-right on small screens, sized to match the menu island.
 - **Toolbar** — the active tool, mirrored from `BoardScreen`.
 - **Style panel** — `PropertiesPanel` on desktop, `QuickProperties` plus a
   `BottomSheet` on phones. It edits one of two targets: the selected elements,

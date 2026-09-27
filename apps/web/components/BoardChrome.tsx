@@ -106,19 +106,6 @@ export function BoardChrome({
         canRedo={canRedo}
       />
 
-      <header
-        className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center"
-        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
-      >
-        <div
-          className="pointer-events-auto rounded-[var(--radius-island)] px-3 py-2 text-sm font-medium"
-          style={{ background: "var(--island-bg)", boxShadow: "var(--shadow-island)" }}
-        >
-          <span style={{ color: "var(--primary)" }}>Pen</span>
-          <span>Paper</span>
-        </div>
-      </header>
-
       <div className="pp-history" data-testid="history-controls" role="group" aria-label="History">
         <button
           type="button"

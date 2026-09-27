@@ -39,7 +39,8 @@ network does not.
 - **Responsive chrome** measured against excalidraw.com: a vertical dock on
   desktop, a two-row dock plus a compact content-width style pill on phones, a
   right-side style panel from tablet width up, and a floating style card for
-  the full form on small touch screens. Every coarse-pointer target is at least
+  the full form on small touch screens. There is no title bar or permanent
+  wordmark — the canvas is the page. Every coarse-pointer target is at least
   44 px.
 - **Installable PWA** with offline app shell, manifest, maskable icons, and a
   service worker that serves the board offline after the first visit.
