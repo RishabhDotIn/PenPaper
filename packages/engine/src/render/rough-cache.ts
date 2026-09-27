@@ -32,7 +32,8 @@ function cacheKey(el: Element): string {
   ].join(":");
 }
 
-function dashArray(el: Element): number[] {
+/** The canvas dash pattern for an element's stroke style. */
+export function dashArray(el: Element): number[] {
   if (el.strokeStyle === "dashed") return [el.strokeWidth * 4, el.strokeWidth * 4];
   if (el.strokeStyle === "dotted") return [el.strokeWidth, el.strokeWidth * 2];
   return [];

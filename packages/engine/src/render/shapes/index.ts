@@ -1,6 +1,6 @@
 import type { Element } from "@penpaper/shared";
 import type { Theme } from "../theme";
-import type { Drawable, RoughCache } from "../rough-cache";
+import { dashArray, type Drawable, type RoughCache } from "../rough-cache";
 import { drawArrowheads } from "./arrow";
 import { drawFreedraw } from "./freedraw";
 import { drawText } from "./text";
@@ -47,14 +47,21 @@ export function renderDrawable(
     }
 
     if (set.type === "fillPath" || set.type === "fillSketch") {
+      // Shading is its own texture; a dashed outline must not dash the hatches.
+      ctx.setLineDash([]);
       ctx.fillStyle = el.backgroundColor;
       ctx.fill();
     } else {
+      // Rough stores the dash pattern in the drawable, but these ops are
+      // painted by hand, so the pattern has to be applied here.
+      ctx.setLineDash(dashArray(el));
       ctx.strokeStyle = el.strokeColor;
       ctx.lineWidth = el.strokeWidth;
       ctx.stroke();
     }
   }
+
+  ctx.setLineDash([]);
 }
 
 /**

@@ -37,10 +37,11 @@ network does not.
   `pagehide`, and camera restoration on reload. Theme, paper, layout, and style
   defaults persist separately in `localStorage`.
 - **Responsive chrome** measured against excalidraw.com: a vertical dock on
-  desktop, a two-row dock on phones, a right-side style panel from tablet width
-  up, and a content-sized style card behind a palette button on smaller screens.
-  The bottom edge holds the dock alone — there is no permanent colour bar, and
-  no title bar or wordmark. Every coarse-pointer target is at least 44 px.
+  desktop, a two-row dock on phones, a collapsible right-side style panel from
+  tablet width up, and a style popover anchored to the palette button on
+  smaller screens. The bottom edge holds the dock alone - there is no permanent
+  colour bar, and no title bar or wordmark. Every coarse-pointer target is at
+  least 44 px.
 - **Installable PWA** with offline app shell, manifest, maskable icons, and a
   service worker that serves the board offline after the first visit.
 - **A seeded demo board** at `/b/demo` — title, hand-drawn underline, three

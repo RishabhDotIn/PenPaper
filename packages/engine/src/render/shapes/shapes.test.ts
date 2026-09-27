@@ -63,6 +63,37 @@ describe("drawElement", () => {
 
     expect(ctx.fillStyle).toBe("#e03131");
   });
+
+  it("applies the dash pattern to a dashed outline, and only to the outline", () => {
+    const el = {
+      ...createElement("rectangle", { x: 0, y: 0, width: 80, height: 40 }, "V"),
+      strokeStyle: "dashed" as const,
+      strokeWidth: 2 as const,
+      backgroundColor: "#a5d8ff",
+    };
+    const ctx = fakeCtx();
+
+    drawElement(ctx, el, new RoughCache(), lightTheme);
+
+    const dashes = ctx.records
+      .filter((record) => record.name === "setLineDash")
+      .map((record) => record.args[0]);
+    expect(dashes).toContainEqual([8, 8]);
+    // Hatched fills are texture, not outline: they must stay solid.
+    expect(dashes).toContainEqual([]);
+  });
+
+  it("leaves a solid outline undashed", () => {
+    const el = createElement("ellipse", { x: 0, y: 0, width: 80, height: 40 }, "V");
+    const ctx = fakeCtx();
+
+    drawElement(ctx, el, new RoughCache(), lightTheme);
+
+    const dashes = ctx.records
+      .filter((record) => record.name === "setLineDash")
+      .map((record) => record.args[0]);
+    expect(dashes.every((dash) => Array.isArray(dash) && dash.length === 0)).toBe(true);
+  });
 });
 
 describe("freedraw", () => {
@@ -85,6 +116,53 @@ describe("freedraw", () => {
     const ctx = fakeCtx();
     traceOutline(ctx, [[0, 0], [4, 4]]);
     expect(ctx.calls).not.toContain("beginPath");
+  });
+
+  it("strokes a dashed centre line instead of filling the outline", () => {
+    const el = {
+      ...createElement("freedraw", { x: 0, y: 0, width: 80, height: 24 }, "V"),
+      points: [
+        [0, 0, 0.5],
+        [20, 8, 0.5],
+        [50, 4, 0.5],
+        [80, 24, 0.5],
+      ],
+      strokeStyle: "dashed" as const,
+      strokeWidth: 2 as const,
+    };
+    const ctx = fakeCtx();
+
+    drawElement(ctx, el, new RoughCache(), lightTheme);
+
+    expect(ctx.calls).toContain("stroke");
+    expect(ctx.calls).not.toContain("fill");
+    const dash = ctx.records.find(
+      (record) => record.name === "setLineDash" && (record.args[0] as number[]).length > 0,
+    );
+    const [on, off] = dash?.args[0] as number[];
+    expect(on).toBeCloseTo(7.8, 5);
+    expect(off).toBeCloseTo(5.7, 5);
+  });
+
+  it("draws dots, not dashes, for a dotted pen", () => {
+    const el = {
+      ...createElement("freedraw", { x: 0, y: 0, width: 80, height: 24 }, "V"),
+      points: [
+        [0, 0, 0.5],
+        [40, 8, 0.5],
+        [80, 24, 0.5],
+      ],
+      strokeStyle: "dotted" as const,
+      strokeWidth: 2 as const,
+    };
+    const ctx = fakeCtx();
+
+    drawElement(ctx, el, new RoughCache(), lightTheme);
+
+    const dash = ctx.records.find(
+      (record) => record.name === "setLineDash" && (record.args[0] as number[]).length > 0,
+    );
+    expect((dash?.args[0] as number[])[0]).toBeLessThan(1);
   });
 });
 

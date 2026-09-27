@@ -261,31 +261,68 @@ test.describe("hamburger menu", () => {
   });
 });
 
-test.describe("style sheet", () => {
-  test("a narrow window opens a content-sized card, not a half-screen slab", async ({ page }) => {
+test.describe("style popover", () => {
+  test("drops from the palette button, sized to its content", async ({ page }) => {
     await page.setViewportSize({ width: 700, height: 700 });
     await openBoard(page);
     await page.getByTestId("open-styles").click();
 
-    const sheet = page.locator(".pp-sheet");
-    await expect(sheet).toBeVisible();
+    const popover = page.locator(".pp-popover");
+    await expect(popover).toBeVisible();
 
-    const box = await sheet.boundingBox();
+    const box = await popover.boundingBox();
     expect(box).not.toBeNull();
-    expect(box!.width).toBeLessThanOrEqual(430);
-    expect(Math.abs(box!.x + box!.width / 2 - 350)).toBeLessThan(2);
+    // It starts under the palette button, not at the bottom of the screen.
+    expect(Math.abs(box!.x - 12)).toBeLessThan(2);
+    expect(Math.abs(box!.y - 64)).toBeLessThan(3);
+    expect(box!.width).toBeLessThanOrEqual(340);
     expect(box!.height).toBeLessThan(560);
 
-    // The card is complete: the old fixed 50 vh sheet clipped the last section.
-    await expect(sheet).toContainText("Opacity");
+    // The card is complete: the old fixed-height sheet clipped its last section.
+    await expect(popover).toContainText("Opacity");
   });
 
-  test("a tablet-width window gets the full panel, not a card", async ({ page }) => {
+  test("a tap anywhere else dismisses the popover", async ({ page }) => {
+    await page.setViewportSize({ width: 700, height: 700 });
+    await openBoard(page);
+
+    await page.getByTestId("open-styles").click();
+    const popover = page.locator(".pp-popover");
+    await expect(popover).toBeVisible();
+
+    await page.locator("main").click({ position: { x: 580, y: 640 } });
+    await expect(popover).toHaveCount(0);
+
+    // Escape closes it too.
+    await page.getByTestId("open-styles").click();
+    await expect(popover).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(popover).toHaveCount(0);
+  });
+
+  test("a tablet-width window toggles the right panel with the arrow", async ({ page }) => {
     await page.setViewportSize({ width: 900, height: 700 });
     await openBoard(page);
     await page.locator('[data-tool="rectangle"]').click();
 
-    await expect(page.locator(".pp-properties-desktop")).toBeVisible();
+    const panel = page.locator(".pp-properties-desktop");
+    const toggle = page.getByTestId("toggle-panel");
+    await expect(panel).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    await toggle.click();
+    await expect(panel).toHaveCount(0);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(toggle).toHaveAttribute("aria-label", "Show styles");
+
+    // The handle stays on the screen edge while the panel is away.
+    const box = await toggle.boundingBox();
+    expect(box).not.toBeNull();
+    expect(900 - (box!.x + box!.width)).toBeLessThan(12);
+
+    await toggle.click();
+    await expect(panel).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-label", "Hide styles");
     await expect(page.getByTestId("open-styles")).toBeHidden();
   });
 
@@ -297,7 +334,7 @@ test.describe("style sheet", () => {
       deviceScaleFactor: 2,
     });
 
-    test("the dock fits and the sheet keeps its swatches on one row", async ({ page }) => {
+    test("the dock fits and the popover keeps its swatches on one row", async ({ page }) => {
       await openBoard(page);
 
       const dock = await page.locator(".pp-dock").boundingBox();
@@ -306,13 +343,17 @@ test.describe("style sheet", () => {
       expect(dock!.x + dock!.width).toBeLessThanOrEqual(360);
 
       await page.getByTestId("open-styles").click();
-      const sheet = page.locator(".pp-sheet");
-      await expect(sheet).toBeVisible();
-      expect(await sheet.boundingBox()).not.toBeNull();
+      const popover = page.locator(".pp-popover");
+      await expect(popover).toBeVisible();
 
-      // Seven 40 px swatches in a 316 px content box: one row, no tall card.
+      const box = await popover.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(360);
+
+      // Seven 40 px swatches in a 312 px content box: one row, no tall card.
       const wrap = await page.evaluate(() => {
-        const group = document.querySelector(".pp-sheet .pp-swatches");
+        const group = document.querySelector(".pp-popover .pp-swatches");
         return group ? group.getBoundingClientRect().height : 0;
       });
       expect(wrap).toBeLessThan(60);
@@ -345,16 +386,24 @@ test.describe("phone chrome", () => {
     expect(844 - dock!.y).toBeLessThan(112);
 
     await page.getByTestId("open-styles").click();
-    const sheet = page.locator(".pp-sheet");
-    await expect(sheet).toBeVisible();
-    await expect(sheet).toContainText("Stroke");
+    const popover = page.locator(".pp-popover");
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText("Stroke");
 
-    const red = sheet.getByRole("button", { name: "Stroke #e03131" });
+    // It hangs from the palette button, not from the bottom edge.
+    const box = await popover.boundingBox();
+    expect(box).not.toBeNull();
+    expect(Math.abs(box!.x - 12)).toBeLessThan(2);
+    expect(Math.abs(box!.y - 64)).toBeLessThan(3);
+    expect(box!.y + box!.height).toBeLessThan(700);
+
+    const red = popover.getByRole("button", { name: "Stroke #e03131" });
     await red.click();
     await expect(red).toHaveAttribute("aria-pressed", "true");
 
-    await page.getByRole("button", { name: "Close styles" }).click();
-    await expect(sheet).toHaveCount(0);
+    // Tapping the board itself closes it.
+    await page.locator("main").click({ position: { x: 195, y: 680 } });
+    await expect(popover).toHaveCount(0);
   });
 
   test("the menu fits the screen and stays reachable", async ({ page }) => {

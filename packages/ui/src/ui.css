@@ -152,8 +152,12 @@
   cursor: pointer;
 }
 
-.pp-menu-button:hover {
-  background: var(--surface-mid);
+/* A touch device keeps :hover after a tap, which leaves the button looking
+   selected while its popover is open. Only a real pointer gets hover. */
+@media (hover: hover) {
+  .pp-menu-button:hover {
+    background: var(--surface-mid);
+  }
 }
 
 .pp-menu-button svg {
@@ -461,7 +465,8 @@
 }
 
 /* A right-side panel from tablet width up. Below that it would eat too much of
-   the canvas, so touch widths get the style button in the top bar and a card. */
+   the canvas, so touch widths get the palette button in the top bar and a
+   popover instead. */
 @media (min-width: 768px) {
   .pp-properties-desktop {
     position: fixed;
@@ -474,6 +479,54 @@
 
   .pp-properties-mobile {
     display: none;
+  }
+}
+
+/* The collapse handle for the right rail. Closed, it is a tab on the screen
+   edge; open, it sits on the panel's left edge and points back at it. */
+.pp-panel-dock {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .pp-panel-dock {
+    display: block;
+  }
+
+  .pp-panel-toggle {
+    position: fixed;
+    z-index: 21;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 56px;
+    padding: 0;
+    border: 0;
+    border-radius: 9px;
+    color: var(--on-surface-muted);
+    background: var(--island-bg);
+    box-shadow: var(--shadow-island);
+    cursor: pointer;
+    transition: color 120ms ease;
+  }
+
+  .pp-panel-toggle:hover {
+    color: var(--on-surface);
+  }
+
+  .pp-panel-toggle svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Attached to the open panel: the arrow now means "push this away". */
+  .pp-panel-dock.is-open .pp-panel-toggle {
+    right: 246px;
+    border-radius: 9px 0 0 9px;
   }
 }
 
@@ -491,11 +544,11 @@
   box-shadow: var(--shadow-island);
 }
 
-/* Inside the card the panel is a flow child, not a floating island. */
-.pp-sheet .pp-panel {
+/* Inside the popover the panel is a flow child, not a floating island. */
+.pp-popover .pp-panel {
   width: auto;
   max-height: none;
-  padding: 2px 14px calc(14px + env(safe-area-inset-bottom));
+  padding: 10px 14px 14px;
   background: transparent;
   box-shadow: none;
 }
@@ -660,96 +713,52 @@
   .pp-range {
     height: 44px;
   }
-
-  .pp-sheet-close {
-    width: 44px;
-    height: 44px;
-  }
 }
 
-/* -------------------------------------------------------------- bottom sheet */
+/* ------------------------------------------------------------------ popover */
 
-.pp-sheet {
+/*
+ * The phone style card, anchored under the palette button.
+ *
+ * It is a popover, not a sheet: it starts at the icon that opened it, sizes to
+ * its content, and disappears when the user taps anywhere else. A sheet that
+ * slid up from the bottom and needed a close button read as a second screen.
+ */
+.pp-popover {
   position: fixed;
   z-index: 40;
-  bottom: calc(8px + env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(430px, calc(100vw - 16px));
+  top: calc(max(12px, env(safe-area-inset-top)) + 52px);
+  left: 12px;
 
   display: flex;
   flex-direction: column;
-  height: auto;
-  max-height: calc(100dvh - 72px - env(safe-area-inset-bottom));
+  width: min(340px, calc(100vw - 24px));
+  /* Stop above the dock: 64 px of top bar plus the dock's ~108 px band. */
+  max-height: calc(100dvh - 172px - env(safe-area-inset-bottom));
   overflow: hidden;
 
   background: var(--island-bg);
   border: 1px solid var(--surface-low);
-  border-radius: 18px;
+  border-radius: 14px;
   box-shadow:
-    0 18px 48px rgba(0, 0, 0, 0.22),
-    0 2px 8px rgba(0, 0, 0, 0.08);
-  animation: pp-sheet-in 200ms var(--ease-out);
+    0 16px 40px rgba(0, 0, 0, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+  transform-origin: 72px 0;
+  animation: pp-popover-in 160ms var(--ease-out);
 }
 
-@keyframes pp-sheet-in {
+@keyframes pp-popover-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 12px);
+    transform: translateY(-6px) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: none;
   }
 }
 
-/* A 44 px header holds the grabber and the close button; the card then sizes
-   to its content instead of clipping the last section behind a scrollbar. */
-.pp-sheet-handle {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  height: 44px;
-  pointer-events: none;
-}
-
-.pp-sheet-handle::after {
-  content: "";
-  width: 32px;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--on-surface-muted);
-  opacity: 0.35;
-}
-
-.pp-sheet-close {
-  position: absolute;
-  top: 0;
-  right: 4px;
-  z-index: 2;
-
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: 10px;
-  color: var(--on-surface-muted);
-  background: transparent;
-  cursor: pointer;
-}
-
-.pp-sheet-close:hover {
-  background: var(--surface-low);
-}
-
-.pp-sheet-close svg {
-  width: 18px;
-  height: 18px;
-}
-
-.pp-sheet-content {
+.pp-popover-content {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -757,31 +766,31 @@
 }
 
 /* The default Windows scrollbar inside a floating card is the single cheapest
-   looking element in the sheet. Thin and translucent instead. */
+   looking element in the panel. Thin and translucent instead. */
 .pp-panel,
-.pp-sheet-content {
+.pp-popover-content {
   scrollbar-width: thin;
   scrollbar-color: rgba(120, 120, 130, 0.4) transparent;
 }
 
 .pp-panel::-webkit-scrollbar,
-.pp-sheet-content::-webkit-scrollbar {
+.pp-popover-content::-webkit-scrollbar {
   width: 6px;
 }
 
 .pp-panel::-webkit-scrollbar-thumb,
-.pp-sheet-content::-webkit-scrollbar-thumb {
+.pp-popover-content::-webkit-scrollbar-thumb {
   background: rgba(120, 120, 130, 0.4);
   border-radius: 999px;
 }
 
 .pp-panel::-webkit-scrollbar-track,
-.pp-sheet-content::-webkit-scrollbar-track {
+.pp-popover-content::-webkit-scrollbar-track {
   background: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pp-sheet {
+  .pp-popover {
     animation: none;
   }
 

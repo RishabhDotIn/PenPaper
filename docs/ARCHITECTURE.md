@@ -24,7 +24,7 @@ packages/engine       framework-agnostic canvas engine
   history/            transaction history and commands
   text/               wrapping and measurement
   serialize.ts        versioned board JSON
-packages/ui           toolbar, properties panel, app menu, bottom sheet, CSS tokens
+packages/ui           toolbar, properties panel, app menu, style popover, CSS tokens
 ```
 
 The engine has no React, Next, or module-scope `window` access. Its runtime
@@ -135,13 +135,15 @@ state:
 - **History** — undo and redo in a two-button island, bottom-left on desktop
   and top-right on small screens, sized to match the menu island.
 - **Toolbar** — the active tool, mirrored from `BoardScreen`.
-- **Style panel** — `PropertiesPanel` in a right rail from 768 px up. Below that
-  the palette button in the top-left island opens `BottomSheet`, a content-sized
-  card that scrolls only when a tall selection needs it. It edits one of two
-  targets: the selected elements, or the style defaults stamped onto the next
-  element the active tool creates. `InputController.setStyle()` holds that
-  default; the panel receives a zero-sized preview element built from it, so the
-  same form code serves both cases without a second component.
+- **Style panel** — `PropertiesPanel` in a right rail from 768 px up; a small
+  chevron tab on the rail's left edge collapses it to the screen edge and back.
+  Below that, the palette button in the top-left island drops a `StylePopover`:
+  a content-sized card anchored under the icon and dismissed by any tap
+  outside it. It edits one of two targets: the selected elements, or the style
+  defaults stamped onto the next element the active tool creates.
+  `InputController.setStyle()` holds that default; the panel receives a
+  zero-sized preview element built from it, so the same form code serves both
+  cases without a second component.
 - **`AppMenu`** — the hamburger popover: undo/redo, theme, paper colour, layout,
   PNG export, and reset. Appearance actions keep the popover open so themes can
   be compared; one-shot and destructive actions close it.
@@ -255,10 +257,11 @@ not on synthetic scores.
 - Coarse pointers get 44 px minimum targets; hit testing uses a 22 px radius for
   touch and 8 px for a mouse.
 - The phone dock is horizontal; the desktop dock is vertical. The properties
-  panel becomes a content-sized card on small touch widths — a centred popup
-  above an 8 px margin, not a half-screen slab. It has no drag handle and no
-  fixed height: it grows with its sections and only scrolls for a tall
-  selection. From 768 px up the full panel sits on the right instead.
+  panel becomes a card under the palette button on small touch widths: a
+  top-left popover, not a bottom slab. It has no drag handle, no close button,
+  and no fixed height; any tap outside it, Escape, or a tool change dismisses
+  it. From 768 px up the full panel sits on the right, with a chevron tab that
+  collapses it to the screen edge and brings it back.
 - The bottom edge holds the dock and nothing else. The old colour pill floated
   above it and covered another 54 px of canvas; the palette now lives beside the
   hamburger in the top-left island, so colours are still one tap away without a

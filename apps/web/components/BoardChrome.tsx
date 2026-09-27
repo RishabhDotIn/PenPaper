@@ -2,16 +2,16 @@
 
 import {
   AppMenu,
-  BottomSheet,
   PaletteIcon,
   PropertiesPanel,
+  StylePopover,
   Toolbar,
   type CanvasLayout,
   type ThemeChoice,
 } from "@penpaper/ui";
 import { createElement, type StyleDefaults, type Tool } from "@penpaper/engine";
 import type { Element, ElementType } from "@penpaper/shared";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export interface BoardMenuProps {
   theme: ThemeChoice;
@@ -69,9 +69,33 @@ export function BoardChrome({
   isCreating,
   menu,
 }: BoardChromeProps) {
-  const [stylesOpen, setStylesOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(true);
 
   const showStyle = selection.length > 0 || isCreating;
+
+  // A popover has no backdrop, so anything outside it has to dismiss it: a tap
+  // on the canvas, another tool, the menu. Escape does the same for a keyboard.
+  useEffect(() => {
+    if (!popoverOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('[data-testid="style-popover"], [data-testid="open-styles"]')) return;
+      setPopoverOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPopoverOpen(false);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [popoverOpen]);
 
   // The panel needs an Element because that is the model it edits. For defaults
   // it gets a zero-sized preview of the active tool: same fields, no scene.
@@ -105,8 +129,8 @@ export function BoardChrome({
             data-testid="open-styles"
             aria-label="Style"
             aria-haspopup="dialog"
-            aria-expanded={stylesOpen}
-            onClick={() => setStylesOpen((open) => !open)}
+            aria-expanded={popoverOpen}
+            onClick={() => setPopoverOpen((open) => !open)}
           >
             <PaletteIcon />
           </button>
@@ -145,26 +169,43 @@ export function BoardChrome({
       <Toolbar value={tool} onChange={onToolChange} />
 
       {showStyle ? (
-        <aside className="pp-properties-desktop" aria-label="Style">
-          <PropertiesPanel
-            selection={styleValue}
-            onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}
-            onDelete={selection.length > 0 ? onDelete : undefined}
-            title={selection.length > 0 ? undefined : "Style"}
-          />
-        </aside>
+        <div className={`pp-panel-dock${panelOpen ? " is-open" : ""}`}>
+          <button
+            type="button"
+            className="pp-panel-toggle"
+            data-testid="toggle-panel"
+            aria-label={panelOpen ? "Hide styles" : "Show styles"}
+            aria-expanded={panelOpen}
+            onClick={() => setPanelOpen((open) => !open)}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {panelOpen ? <path d="M9 5l7 7-7 7" /> : <path d="M15 5l-7 7 7 7" />}
+            </svg>
+          </button>
+
+          {panelOpen ? (
+            <aside className="pp-properties-desktop" aria-label="Style">
+              <PropertiesPanel
+                selection={styleValue}
+                onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}
+                onDelete={selection.length > 0 ? onDelete : undefined}
+                title={selection.length > 0 ? undefined : "Style"}
+              />
+            </aside>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="pp-properties-mobile">
-        {stylesOpen ? (
-          <BottomSheet label="Style" onClose={() => setStylesOpen(false)}>
+        {popoverOpen ? (
+          <StylePopover label="Style">
             <PropertiesPanel
               selection={styleValue}
               onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}
               onDelete={selection.length > 0 ? onDelete : undefined}
               showTitle={false}
             />
-          </BottomSheet>
+          </StylePopover>
         ) : null}
       </div>
     </>
