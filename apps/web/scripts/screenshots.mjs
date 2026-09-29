@@ -12,6 +12,13 @@ await desktopPage.waitForSelector("main[data-ready='true']");
 await desktopPage.waitForTimeout(700);
 await desktopPage.screenshot({ path: "../../docs/screenshots/penpaper-desktop.png" });
 
+// The shelf is the first thing a returning user sees.
+const shelfPage = await desktop.newPage();
+await shelfPage.goto("http://localhost:3000/");
+await shelfPage.waitForSelector("[data-testid='library']");
+await shelfPage.waitForTimeout(700);
+await shelfPage.screenshot({ path: "../../docs/screenshots/penpaper-shelf.png" });
+
 const phone = await browser.newContext({
   viewport: { width: 390, height: 844 },
   isMobile: true,

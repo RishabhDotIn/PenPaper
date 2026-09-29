@@ -11,6 +11,11 @@ network does not.
 | --- | --- |
 | ![PenPaper on desktop](docs/screenshots/penpaper-desktop.png) | ![PenPaper on a phone](docs/screenshots/penpaper-phone.png) |
 
+The shelf at `/` lists every notepad on the device. Connecting Google Drive adds
+the same cards on every device signed into that account.
+
+![The PenPaper shelf](docs/screenshots/penpaper-shelf.png)
+
 ## What works today (Phase 1)
 
 - **Infinite canvas** with scroll-to-pan, pinch-to-zoom, and a cached grid.
@@ -47,8 +52,18 @@ network does not.
 - **A seeded demo board** at `/b/demo` — title, hand-drawn underline, three
   filled flow boxes, arrows, and notes — so the first open is not a blank page.
 
-Not yet: real-time collaboration, accounts, cloud sync, image upload, and arrow
-binding. Those are the next phases in
+- **A shelf of notepads at `/`** with a seeded demo, rename, delete, and one
+  card per board. `/b/<id>` opens a notepad, and the board menu leads back.
+- **Optional Google Drive sync.** Connect one Google account and the same
+  notepads appear on every device, stored as JSON files in a visible `PenPaper`
+  folder. Auto-sync can be switched off for per-notepad control. The browser
+  talks to Drive directly with an hour-long token: no backend, no secret, no
+  refresh token. Setup is one public client ID — see
+  [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md). Without it, the app stays
+  local-only.
+
+Not yet: real-time collaboration, image upload, and arrow binding. Those are the
+next phases in
 [`docs/superpowers/specs/2026-10-31-penpaper-design.md`](docs/superpowers/specs/2026-10-31-penpaper-design.md).
 The canvas already uses the element model and tombstone semantics those phases
 require.
@@ -71,11 +86,15 @@ require.
 
 ```bash
 pnpm install
-pnpm --filter web dev          # http://localhost:3000/b/demo
+pnpm --filter web dev          # http://localhost:3000
 ```
 
-`/b/local` is the personal board; `/b/demo` opens with a small diagram the first
-time and then behaves like any other local board.
+`/` is the shelf. It seeds a demo notepad on the first visit, then lists every
+notepad on the device; `/b/local` and `/b/<id>` open a board directly.
+
+Google Drive sync stays off until `apps/web/.env.local` contains a public OAuth
+client ID. See [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md); without it the
+app is fully local and says so on the shelf.
 
 Use `localhost`, not `127.0.0.1`: Next's dev-server cross-origin rules treat the
 two as different origins and hydration silently stops.
@@ -105,11 +124,11 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 
 | Metric | Result | Gate |
 | --- | --- | --- |
-| Engine unit tests | 167 passing | all green |
-| Web unit tests | 17 passing | all green |
-| Browser tests | 33 passing | all green |
-| Median renderer frame body, 1,000 mixed shapes | 7.3–8.4 ms production | ≤ 16 ms |
-| Board route transfer, gzip | 169.4 KiB JS + CSS | ≤ 220 kB |
+| Engine unit tests | 171 passing | all green |
+| Web unit tests | 64 passing | all green |
+| Browser tests | 40 passing | all green |
+| Median renderer frame body, 1,000 mixed shapes | 7.4–9.3 ms production | ≤ 16 ms |
+| Board route transfer, gzip | 175.4 KiB JS + CSS | ≤ 220 kB |
 
 The frame measurement is the renderer's own body (cull, layout, paint commands),
 not `requestAnimationFrame` deltas, which are clamped to the display refresh rate
@@ -125,7 +144,12 @@ Render's free tier runs. No Vercel-specific APIs are used.
 2. In Render, choose **New → Blueprint** and select the repository. The included
    [`render.yaml`](render.yaml) creates a free web service with the right build
    and start commands.
-3. Open `/b/demo` on each device. Android Chrome and desktop browsers offer
+3. Optional but recommended for Drive sync: set
+   `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in the service's environment and add the
+   Render origin under **Authorized JavaScript origins** for that OAuth client.
+   See [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md). `NEXT_PUBLIC_*` values
+   are inlined at build time, so redeploy after changing it.
+4. Open `/` on each device. Android Chrome and desktop browsers offer
    **Install app**; the manifest and icons are already in place.
 
 The free instance sleeps after 15 minutes of inactivity and takes ~60 s to wake.

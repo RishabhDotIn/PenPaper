@@ -10,7 +10,15 @@ import {
   type Preferences,
 } from "@/lib/preferences";
 import { saveBoard, type BoardSnapshot } from "@/lib/storage";
+import {
+  flushSyncQueue,
+  queueBoardSync,
+  reconcileBoard,
+} from "@/lib/drive/sync";
+import { hasSession } from "@/lib/drive/auth";
+import { useSyncStore } from "@/store/sync-store";
 import { useBoardStore } from "@/store/board-store";
+import { useRouter } from "next/navigation";
 import {
   History,
   InputController,
@@ -69,6 +77,7 @@ export interface BoardScreenProps {
  * thousands of re-renders while drawing.
  */
 export function BoardScreen({ boardId, initial }: BoardScreenProps) {
+  const router = useRouter();
   const sceneRef = useRef<Scene | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const controllerRef = useRef<InputController | null>(null);
@@ -148,6 +157,9 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     try {
       await saveBoard(boardId, snapshot);
       useBoardStore.getState().markSaved(snapshot.savedAt);
+      // Local first, Drive a beat later. This call is a no-op unless a session
+      // exists and the board belongs to the library.
+      queueBoardSync(boardId);
     } catch (error) {
       // A board that cannot be written must still be usable. The next edit or
       // an explicit flush retries; the visible chrome reports the problem.
@@ -325,6 +337,40 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     scheduleRender();
   }, [reindex, refreshHistory, refreshStats, scheduleRender, scheduleSave]);
 
+  /**
+   * Adopts elements another device wrote into the same board.
+   *
+   * Never a scene replacement: the canvas is already mounted and may hold a
+   * stroke the user is in the middle of. Merged elements arrive per shape, so
+   * each one is added or updated in place.
+   */
+  const adoptElements = useCallback(
+    (elements: readonly Element[]) => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+
+      let changed = false;
+      for (const element of elements) {
+        const current = scene.get(element.id);
+        if (!current) {
+          scene.add(element);
+          changed = true;
+        } else if (current.updatedAt !== element.updatedAt) {
+          scene.update(element.id, element);
+          changed = true;
+        }
+      }
+
+      if (!changed) return;
+      reindex();
+      refreshSelection();
+      refreshStats();
+      scheduleSave();
+      scheduleRender();
+    },
+    [reindex, refreshSelection, refreshStats, scheduleRender, scheduleSave],
+  );
+
   const undo = useCallback(() => {
     if (historyRef.current?.undo()) afterHistory();
   }, [afterHistory]);
@@ -358,6 +404,35 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   useEffect(() => {
     if (window.matchMedia("(pointer: coarse)").matches) changeTool("freedraw");
   }, [changeTool]);
+
+  /**
+   * Opening a board also reconciles it.
+   *
+   * Delayed past the first paint so the drawing is on screen before any
+   * network work starts, and silent when there is no session: a local board
+   * must never wait for Google to open.
+   */
+  useEffect(() => {
+    if (!ready || !hasSession()) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      reconcileBoard(boardId)
+        .then((result) => {
+          if (!cancelled && result.merged) adoptElements(result.merged);
+        })
+        .catch((error: unknown) => {
+          useSyncStore
+            .getState()
+            .setPhase("error", error instanceof Error ? error.message : "Sync failed");
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [adoptElements, boardId, ready]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -404,7 +479,11 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   // kills backgrounded pages outright; flush while the document is still alive.
   useEffect(() => {
     const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") flushSave();
+      if (document.visibilityState !== "hidden") return;
+      flushSave();
+      // Queued Drive pushes run now: a backgrounded tab is often closed before
+      // its debounce fires, and the board would stay unsynced until opened.
+      void flushSyncQueue();
     };
 
     window.addEventListener("pagehide", flushSave);
@@ -624,6 +703,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
         styleDefaults={preferences.style}
         onStyleDefaultsChange={setStyleDefault}
         isCreating={CREATION_TOOLS.has(tool)}
+        onOpenLibrary={() => router.push("/")}
         menu={{
           theme: preferences.theme,
           onThemeChange: (theme) => updatePreferences({ theme }),

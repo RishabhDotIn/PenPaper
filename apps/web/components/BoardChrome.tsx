@@ -12,6 +12,9 @@ import {
 import { createElement, type StyleDefaults, type Tool } from "@penpaper/engine";
 import type { Element, ElementType } from "@penpaper/shared";
 import { useEffect, useMemo, useState } from "react";
+import { useDriveSession } from "@/lib/drive/use-drive-session";
+import { describeSync } from "@/lib/drive/status";
+import { useSyncStore } from "@/store/sync-store";
 
 export interface BoardMenuProps {
   theme: ThemeChoice;
@@ -39,6 +42,8 @@ export interface BoardChromeProps {
   onStyleDefaultsChange: (patch: Partial<Element>) => void;
   /** A drawing tool is active, so there is a "next element" to style. */
   isCreating: boolean;
+  /** Back to the shelf; the menu item is the only way off a board. */
+  onOpenLibrary: () => void;
   menu: BoardMenuProps;
 }
 
@@ -67,11 +72,18 @@ export function BoardChrome({
   styleDefaults,
   onStyleDefaultsChange,
   isCreating,
+  onOpenLibrary,
   menu,
 }: BoardChromeProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popoverMounted, setPopoverMounted] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
+
+  const session = useDriveSession();
+  const phase = useSyncStore((state) => state.phase);
+  const notice = useSyncStore((state) => state.message);
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
+  const sync = describeSync(Boolean(session), phase, lastSyncedAt, notice);
 
   const showStyle = selection.length > 0 || isCreating;
 
@@ -135,6 +147,13 @@ export function BoardChrome({
         onRedo={onRedo}
         canUndo={canUndo}
         canRedo={canRedo}
+        onOpenLibrary={onOpenLibrary}
+        syncNote={
+          <>
+            <span className="pp-sync-dot" data-tone={sync.tone} aria-hidden="true" />
+            <span>{sync.label}</span>
+          </>
+        }
         trailing={
           <button
             type="button"

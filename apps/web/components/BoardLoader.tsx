@@ -12,6 +12,8 @@ import {
 import type { Element } from "@penpaper/shared";
 import { createDemoElements } from "@/lib/demo-board";
 import { loadBoard, saveBoard } from "@/lib/storage";
+import { hasSession } from "@/lib/drive/auth";
+import { pullBoardById } from "@/lib/drive/sync";
 import { useBoardStore } from "@/store/board-store";
 import { BoardScreen, type BoardInitialState } from "./BoardScreen";
 
@@ -82,6 +84,20 @@ export function BoardLoader({ boardId }: { boardId: string }) {
             if (cancelled) return;
             setHydrated({ elements, camera });
             return;
+          }
+
+          // Not on this device. If Drive is connected it may still be on the
+          // shelf: the board id in the URL is enough to find the file.
+          if (hasSession()) {
+            const pulled = await pullBoardById(boardId).catch((error: unknown) => {
+              console.warn("PenPaper: could not open the Drive copy", error);
+              return null;
+            });
+            if (cancelled) return;
+            if (pulled) {
+              setHydrated({ elements: pulled.elements, camera: pulled.camera });
+              return;
+            }
           }
 
           setHydrated(null);

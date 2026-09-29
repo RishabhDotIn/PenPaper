@@ -42,6 +42,10 @@ export interface AppMenuProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  /** Back to the shelf. Rendered above the export row. */
+  onOpenLibrary?: () => void;
+  /** One line about Drive, under the shelf item. */
+  syncNote?: ReactNode;
   /**
    * Another action rendered inside the same island, e.g. the style trigger on
    * touch widths. Keeping it here means the left edge is one island, not two.
@@ -70,6 +74,8 @@ export function AppMenu({
   onRedo,
   canUndo,
   canRedo,
+  onOpenLibrary,
+  syncNote,
   trailing,
 }: AppMenuProps) {
   const [open, setOpen] = useState(false);
@@ -228,6 +234,22 @@ export function AppMenu({
 
           <div className="pp-menu-sep" />
 
+          {onOpenLibrary ? (
+            <button
+              type="button"
+              className="pp-menu-item"
+              onClick={() => {
+                onOpenLibrary();
+                close();
+              }}
+            >
+              <ShelfIcon />
+              <span>All notepads</span>
+            </button>
+          ) : null}
+
+          {syncNote ? <p className="pp-menu-note">{syncNote}</p> : null}
+
           <button
             type="button"
             className="pp-menu-item"
@@ -285,6 +307,17 @@ function RedoIcon(): ReactElement {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d="M15 7l4.5 4.5L15 16" />
       <path d="M19.5 11.5H9a4.5 4.5 0 0 0 0 9h2" />
+    </svg>
+  );
+}
+
+function ShelfIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M4.5 5.5h6v13h-6z" />
+      <path d="M13.5 5.5h6v13h-6z" />
+      <path d="M7.5 9.5h0.01" />
+      <path d="M7.5 13h0.01" />
     </svg>
   );
 }

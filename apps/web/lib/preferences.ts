@@ -21,6 +21,12 @@ export interface Preferences {
   layout: CanvasLayout;
   /** Style stamped onto the next element the active tool creates. */
   style: StyleDefaults;
+  /**
+   * Drive: keep every device in step automatically. Off, the shelf becomes a
+   * per-board choice. Stored on the device, not in the account, because it is a
+   * statement about *this* device's battery and data, not about the boards.
+   */
+  autoSync: boolean;
 }
 
 const KEY = "penpaper:prefs:v1";
@@ -30,6 +36,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   background: null,
   layout: "lines",
   style: { ...DEFAULT_ELEMENT_STYLE },
+  autoSync: true,
 };
 
 const THEMES: ReadonlySet<string> = new Set(["light", "dark", "system"]);
@@ -115,6 +122,7 @@ function normalize(raw: unknown): Preferences {
       ? (raw.layout as CanvasLayout)
       : DEFAULT_PREFERENCES.layout,
     style: normalizeStyle(raw.style),
+    autoSync: typeof raw.autoSync === "boolean" ? raw.autoSync : DEFAULT_PREFERENCES.autoSync,
   };
 }
 

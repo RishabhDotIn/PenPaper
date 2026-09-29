@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "PenPaper",
     description:
       "An infinite canvas for sketches, diagrams, and notes. Draw with a pen, a finger, or a mouse.",
-    // Opening the installed app should land on a board, not a redirect.
-    start_url: "/b/local",
+    // Opening the installed app lands on the shelf, where every notepad lives.
+    start_url: "/",
     scope: "/",
     display: "standalone",
     orientation: "any",

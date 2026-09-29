@@ -50,6 +50,16 @@ describe("preferences", () => {
     expect(loadPreferences()).toEqual(value);
   });
 
+  it("remembers that auto-sync was turned off on this device", () => {
+    savePreferences({ ...DEFAULT_PREFERENCES, autoSync: false });
+    expect(loadPreferences().autoSync).toBe(false);
+  });
+
+  it("treats a non-boolean auto-sync as the default, on", () => {
+    store.set("penpaper:prefs:v1", JSON.stringify({ autoSync: "yes" }));
+    expect(loadPreferences().autoSync).toBe(true);
+  });
+
   it("falls back to defaults for corrupt JSON", () => {
     store.set("penpaper:prefs:v1", "{not json");
 

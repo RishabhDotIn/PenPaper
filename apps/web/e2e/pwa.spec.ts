@@ -19,7 +19,7 @@ test.describe("PWA surface", () => {
     };
 
     expect(manifest.name).toContain("PenPaper");
-    expect(manifest.start_url).toBe("/b/local");
+    expect(manifest.start_url).toBe("/");
     expect(manifest.scope).toBe("/");
     expect(manifest.display).toBe("standalone");
 

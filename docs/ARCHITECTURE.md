@@ -8,10 +8,13 @@ lean on, and about the decisions that are easy to undo accidentally.
 
 ```
 apps/web              Next.js App Router shell
+  app/                the shelf at `/`
   app/b/[id]          one board per route
-  components/         BoardLoader, BoardScreen, BoardSurface, TextEditorOverlay
-  lib/storage.ts      IndexedDB snapshot store (idb)
-  lib/preferences.ts  validated theme/paper/layout/style defaults (localStorage)
+  components/         Library, BoardLoader, BoardScreen, BoardSurface, TextEditorOverlay
+  lib/storage.ts      IndexedDB scene + shelf-index stores (idb)
+  lib/library.ts      shelf model, demo seed, relative times
+  lib/drive/          optional Google Drive sync (auth, REST, merge, reconcile)
+  lib/preferences.ts  validated theme/paper/layout/style/auto-sync defaults (localStorage)
   store/board-store.ts  Zustand metadata (status, element count, savedAt)
   public/sw.js        offline shell service worker
   e2e/                Playwright specs
@@ -191,7 +194,7 @@ under `penpaper:prefs:v1`:
 
 ```ts
 { theme: "light" | "dark" | "system", background: string | null,
-  layout: "none" | "dots" | "lines", style: StyleDefaults }
+  layout: "none" | "dots" | "lines", style: StyleDefaults, autoSync: boolean }
 ```
 
 Theme, paper, layout, and the next-element style are device facts, not board
@@ -205,10 +208,77 @@ The canvas has no `localStorage`, so these values are pushed into the renderer
 at startup and through `setTheme`, `setBackground`, and `setPattern` whenever
 they change.
 
-`/b/demo` is the one board with a seed: if there is no device snapshot, the
-loader writes a small diagram (text, freedraw, filled rectangles, arrows) before
-mounting the canvas. After that first write it is an ordinary board, so edits
-and the camera persist and the demo is never injected over user work.
+The shelf seeds one demo notepad on a new install, and `/b/demo` seeds the same
+diagram if opened directly: text, freedraw, filled rectangles, and arrows,
+written before the canvas mounts. After that first write it is an ordinary
+board, so edits, renaming, and the camera persist and the demo is never injected
+over user work. A `localStorage` flag stops a deleted demo from returning.
+
+## Google Drive sync (optional)
+
+Drive is a second copy, never the source of truth. The board is loaded from
+IndexedDB before any network call; reconciliation runs after the first paint and
+silently does nothing when no account is connected.
+
+**No server.** The browser uses Google Identity Services' token model: a popup
+returns an access token valid for about an hour. The token lives in
+`sessionStorage`, so it dies with the tab; the account name and picture live in
+`localStorage` so the shelf can offer one-tap reconnect. There is no client
+secret, no refresh token, no backend, and no database. The only configuration is
+the public `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+
+**Scope.** `drive.file` plus `openid email profile`. `drive.file` is
+non-sensitive: the app sees the files it created, not the rest of the user's
+Drive, and it does not trigger the restricted-scope security assessment.
+
+**What travels.** One JSON document per notepad:
+
+```ts
+{ format: "penpaper.board", version: 1, boardId, title, savedAt, elements }
+```
+
+It is stored as `<title>.penpaper.json` in a visible `PenPaper` folder, tagged
+with app-private properties (`penpaper=1`, `boardId`) so renaming the folder in
+Drive does not strand the app. The camera is deliberately absent: a phone should
+not inherit a laptop's zoom.
+
+**The shelf index.** IndexedDB v2 keeps a separate `meta` store so the shelf
+lists titles and counts without reading every scene. Each card also records this
+device's relationship to Drive: `driveFileId`, the last agreed `driveVersion`,
+`syncedAt`, and `inLibrary`. Those fields describe the device, not the board, so
+they are never uploaded. `listBoards()` backfills a card for boards written
+before v2.
+
+**Reconciliation order.** Pull, merge, write locally, then upload:
+
+1. `files.get` the known file (or `files.list` by `boardId` on a new device).
+2. If its `version` differs from the last agreed one, download and merge.
+3. `mergeElements` unions by id and takes the newer `updatedAt` for a shared
+   shape. Deletions are tombstones (`isDeleted`), so a newer deletion survives
+   an older edit. Same person, different devices: per-element last-writer-wins
+   is the honest promise; field-level CRDT merging belongs to the collab phase.
+4. Save the merged scene locally, then upload one multipart document.
+5. Record the new file id and version.
+
+Uploading before pulling would overwrite whatever the other device wrote, which
+is the lost-work case the feature exists to prevent. The reconciler is keyed by
+board id, so two quick saves coalesce into one run. A trashed file clears its
+stale id and is recreated in the folder rather than PATCHed forever.
+
+`driveVersion` is advisory, not a lock: no `If-Match` precondition is used. The
+only writers are the same account's devices, and the merge makes a lost race
+non-destructive.
+
+**Enablement.** `autoSync` (device preference, default on) syncs the whole
+shelf. Turned off, only boards with `inLibrary` or a known file id move, and the
+shelf shows a per-board Sync button.
+
+**Failure is local failure.** The 1.2 s push debounce never throws into the
+canvas; a failed push is reported in the sync store and the board stays on the
+device. Hiding the tab flushes the queue, because a backgrounded tab is often
+closed before its timer fires. A Drive file deleted while offline is remembered
+in `localStorage` and trashed on the next connected sync, so a later pull cannot
+resurrect a notepad the person deleted.
 
 ## Offline shell
 
@@ -251,7 +321,7 @@ not on synthetic scores.
 
 ## Mobile decisions
 
-- The page never scrolls: `100dvh`, `overflow: hidden`, `overscroll-behavior:
+- The board page never scrolls: `100dvh`, `overflow: hidden`, `overscroll-behavior:
   none`, and `touch-action: none` on the canvas. Otherwise iOS hands drags to
   the document.
 - Coarse pointers get 44 px minimum targets; hit testing uses a 22 px radius for
@@ -280,7 +350,9 @@ pnpm --filter web start        # honors PORT
 ```
 
 `render.yaml` describes a free Render web service (no card, WebSockets, 750
-instance-hours). The free instance sleeps after 15 minutes; `warm.yml` pings it
+instance-hours). `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is declared with `sync: false`,
+so the Drive client id is set in the dashboard and the app still builds and runs
+without it. The free instance sleeps after 15 minutes; `warm.yml` pings it
 every 10 minutes between 02:30 and 18:30 UTC (08:00–24:00 IST), which uses about
 500 of the 750 hours. The app renders local content before any network call, so
 a sleeping instance never blocks a returning user's board.
@@ -295,14 +367,17 @@ so that phase changes the transport, not the data model.
 - **Engine unit tests** cover scene semantics, fractional indices, camera math,
   bounds, quadtree, hit testing, transforms, history, serialization, text
   layout, rendering primitives, and the rough cache.
-- **Web unit tests** cover IndexedDB persistence and the Zustand metadata store
-  with `fake-indexeddb`.
-- **Playwright** covers the seams that only a real browser can prove: responsive
-  chrome and 44 px targets, a drag as one undo step, a style chosen before any
-  element exists, theme and paper changes verified in canvas pixels, autosave
-  surviving reload, board isolation, camera restoration, text overlay
-  focus/IME-ish behaviour, the 1,000-element frame budget, manifest/icons, and
-  the offline shell in a production build.
+- **Web unit tests** cover IndexedDB persistence and the shelf index, the Zustand
+  metadata store, preferences, Drive file naming and per-element merge, and the
+  reconciler against a mocked Drive with a real IndexedDB — pull, merge, save,
+  upload order, coalescing, and recovery from a file deleted in Drive.
+- **Playwright** covers the seams that only a real browser can prove: the shelf
+  (seed, new, rename, delete, the Drive-off hint), responsive chrome and 44 px
+  targets, a drag as one undo step, a style chosen before any element exists,
+  theme and paper changes verified in canvas pixels, autosave surviving reload,
+  board isolation, camera restoration, text overlay focus/IME-ish behaviour, the
+  1,000-element frame budget, manifest/icons, and the offline shell in a
+  production build.
 
 Device automation for the Poco F6 and Xiaomi Pad 7 is still a manual pass. iOS
 and Apple Pencil remain targeted but unverified.

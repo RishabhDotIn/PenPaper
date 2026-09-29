@@ -1,6 +1,13 @@
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
+import { Library } from "@/components/Library";
+import "./library.css";
 
-/** The offline board is the landing experience until boards have an index. */
+export const metadata: Metadata = {
+  title: "PenPaper — all notepads",
+  description: "Every notepad on this device, and the ones you keep in Google Drive.",
+};
+
+/** The shelf is the front door: pick a notepad, or start a new one. */
 export default function Home() {
-  redirect("/b/local");
+  return <Library />;
 }
