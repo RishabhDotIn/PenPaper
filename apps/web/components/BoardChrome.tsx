@@ -70,9 +70,22 @@ export function BoardChrome({
   menu,
 }: BoardChromeProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [popoverMounted, setPopoverMounted] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
 
   const showStyle = selection.length > 0 || isCreating;
+
+  // Keep the card mounted for the length of its exit animation; unmounting on
+  // the same frame the user taps outside makes it disappear rather than leave.
+  useEffect(() => {
+    if (popoverOpen) {
+      setPopoverMounted(true);
+      return;
+    }
+    if (!popoverMounted) return;
+    const timer = window.setTimeout(() => setPopoverMounted(false), 180);
+    return () => window.clearTimeout(timer);
+  }, [popoverOpen, popoverMounted]);
 
   // A popover has no backdrop, so anything outside it has to dismiss it: a tap
   // on the canvas, another tool, the menu. Escape does the same for a keyboard.
@@ -183,22 +196,25 @@ export function BoardChrome({
             </svg>
           </button>
 
-          {panelOpen ? (
-            <aside className="pp-properties-desktop" aria-label="Style">
-              <PropertiesPanel
-                selection={styleValue}
-                onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}
-                onDelete={selection.length > 0 ? onDelete : undefined}
-                title={selection.length > 0 ? undefined : "Style"}
-              />
-            </aside>
-          ) : null}
+          <aside
+            className="pp-properties-desktop"
+            aria-label="Style"
+            aria-hidden={!panelOpen}
+            inert={!panelOpen}
+          >
+            <PropertiesPanel
+              selection={styleValue}
+              onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}
+              onDelete={selection.length > 0 ? onDelete : undefined}
+              title={selection.length > 0 ? undefined : "Style"}
+            />
+          </aside>
         </div>
       ) : null}
 
       <div className="pp-properties-mobile">
-        {popoverOpen ? (
-          <StylePopover label="Style">
+        {popoverMounted ? (
+          <StylePopover label="Style" open={popoverOpen}>
             <PropertiesPanel
               selection={styleValue}
               onPatch={selection.length > 0 ? onPatch : onStyleDefaultsChange}

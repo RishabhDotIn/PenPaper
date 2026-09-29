@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /**
  * The chrome the user asked for: a style panel that is usable *before* drawing,
@@ -63,6 +63,15 @@ async function drawBox(page: Page): Promise<void> {
 async function openMenu(page: Page) {
   await page.getByTestId("app-menu-button").click();
   return page.getByRole("dialog", { name: "Board menu" });
+}
+
+/** Waits out a spring entrance so a measurement sees the settled box. */
+async function settle(locator: Locator): Promise<void> {
+  await locator.evaluate(async (el) => {
+    await Promise.all(
+      el.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
+    );
+  });
 }
 
 test.describe("style before drawing", () => {
@@ -269,6 +278,8 @@ test.describe("style popover", () => {
 
     const popover = page.locator(".pp-popover");
     await expect(popover).toBeVisible();
+    // Measure the settled card, not a frame of its spring entrance.
+    await settle(popover);
 
     const box = await popover.boundingBox();
     expect(box).not.toBeNull();
@@ -311,7 +322,7 @@ test.describe("style popover", () => {
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
     await toggle.click();
-    await expect(panel).toHaveCount(0);
+    await expect(panel).toBeHidden();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(toggle).toHaveAttribute("aria-label", "Show styles");
 
@@ -389,6 +400,8 @@ test.describe("phone chrome", () => {
     const popover = page.locator(".pp-popover");
     await expect(popover).toBeVisible();
     await expect(popover).toContainText("Stroke");
+    // Measure the settled card, not a frame of its spring entrance.
+    await settle(popover);
 
     // It hangs from the palette button, not from the bottom edge.
     const box = await popover.boundingBox();

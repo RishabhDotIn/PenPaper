@@ -7,6 +7,35 @@
  * and the canvas theme stay in step.
  */
 
+/*
+ * One material for every floating island.
+ *
+ * Glass is layers, not a blur: a translucent tint, a saturating backdrop blur,
+ * a specular highlight on the top edge, a hairline rim, and enough depth shadow
+ * to float. The saturation boost is what makes it look lit instead of frosted.
+ */
+.pp-dock,
+.pp-menu-root,
+.pp-history,
+.pp-menu,
+.pp-panel,
+.pp-popover,
+.pp-panel-toggle {
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Bigger surfaces carry a thicker material so text stays crisp over the grid. */
+.pp-menu,
+.pp-panel,
+.pp-popover {
+  background: var(--glass-thick);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  backdrop-filter: blur(32px) saturate(180%);
+}
+
 /* ------------------------------------------------------------------ dock */
 
 .pp-dock {
@@ -24,9 +53,7 @@
   overflow-x: auto;
   overflow-y: hidden;
 
-  background: var(--island-bg);
   border-radius: var(--radius-island);
-  box-shadow: var(--shadow-island);
   scrollbar-width: none;
 }
 
@@ -81,8 +108,14 @@
   background: transparent;
   cursor: pointer;
   transition:
+    transform 140ms var(--ease-out),
     background-color 120ms ease,
     color 120ms ease;
+}
+
+.pp-tool-button:active {
+  /* Press physics fires on pointer-down, not on release. */
+  transform: scale(0.9);
 }
 
 @media (min-width: 768px) {
@@ -133,9 +166,7 @@
   gap: 2px;
   padding: 4px;
 
-  background: var(--island-bg);
   border-radius: 10px;
-  box-shadow: var(--shadow-island);
 }
 
 /* A mouse does not need a 44 px target; 32 px matches the history island. */
@@ -150,6 +181,13 @@
   color: var(--on-surface);
   background: transparent;
   cursor: pointer;
+  transition:
+    transform 130ms var(--ease-out),
+    background-color 120ms ease;
+}
+
+.pp-menu-button:active {
+  transform: scale(0.88);
 }
 
 /* A touch device keeps :hover after a tap, which leaves the button looking
@@ -198,17 +236,22 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 
-  background: var(--island-bg);
+  background: var(--glass-thick);
   border-radius: 12px;
-  box-shadow: var(--shadow-island);
   transform-origin: top left;
-  animation: pp-pop-in 140ms var(--ease-out);
+  animation: pp-pop-in 240ms var(--ease-spring);
 }
 
+/* A small overshoot at 55% is the spring tell: the menu settles into place
+   instead of stopping dead. */
 @keyframes pp-pop-in {
   from {
     opacity: 0;
-    transform: translateY(-4px) scale(0.98);
+    transform: translateY(-8px) scale(0.94);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(1px) scale(1.006);
   }
   to {
     opacity: 1;
@@ -230,6 +273,13 @@
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  transition:
+    transform 120ms var(--ease-out),
+    background-color 120ms ease;
+}
+
+.pp-menu-item:active:not(:disabled) {
+  transform: scale(0.985);
 }
 
 .pp-menu-item:hover:not(:disabled) {
@@ -392,9 +442,7 @@
   gap: 2px;
   padding: 4px;
 
-  background: var(--island-bg);
   border-radius: 10px;
-  box-shadow: var(--shadow-island);
 }
 
 .pp-history-button {
@@ -407,6 +455,13 @@
   color: var(--on-surface);
   background: transparent;
   cursor: pointer;
+  transition:
+    transform 120ms var(--ease-out),
+    background-color 120ms ease;
+}
+
+.pp-history-button:active:not(:disabled) {
+  transform: scale(0.9);
 }
 
 .pp-history-button:hover:not(:disabled) {
@@ -474,7 +529,25 @@
     right: 16px;
     top: 50%;
     display: block;
+
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-50%) translateX(calc(100% + 24px));
+    transition:
+      transform 420ms var(--ease-spring),
+      opacity 180ms var(--ease-out),
+      visibility 0s linear 420ms;
+  }
+
+  .pp-panel-dock.is-open .pp-properties-desktop {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
     transform: translateY(-50%);
+    transition:
+      transform 420ms var(--ease-spring),
+      opacity 160ms var(--ease-out);
   }
 
   .pp-properties-mobile {
@@ -499,6 +572,10 @@
     top: 50%;
     right: 8px;
     transform: translateY(-50%);
+    transition:
+      transform 420ms var(--ease-spring),
+      color 120ms ease,
+      background-color 120ms ease;
 
     display: grid;
     place-items: center;
@@ -508,10 +585,7 @@
     border: 0;
     border-radius: 9px;
     color: var(--on-surface-muted);
-    background: var(--island-bg);
-    box-shadow: var(--shadow-island);
     cursor: pointer;
-    transition: color 120ms ease;
   }
 
   .pp-panel-toggle:hover {
@@ -525,7 +599,7 @@
 
   /* Attached to the open panel: the arrow now means "push this away". */
   .pp-panel-dock.is-open .pp-panel-toggle {
-    right: 246px;
+    transform: translateY(-50%) translateX(-230px);
     border-radius: 9px 0 0 9px;
   }
 }
@@ -539,9 +613,7 @@
   padding: 12px;
   overflow-y: auto;
 
-  background: var(--island-bg);
   border-radius: var(--radius-island);
-  box-shadow: var(--shadow-island);
 }
 
 /* Inside the popover the panel is a flow child, not a floating island. */
@@ -551,6 +623,8 @@
   padding: 10px 14px 14px;
   background: transparent;
   box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .pp-panel-title {
@@ -588,6 +662,13 @@
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 4px;
   cursor: pointer;
+  transition:
+    transform 160ms var(--ease-spring),
+    border-color 120ms ease;
+}
+
+.pp-swatch:active {
+  transform: scale(0.88);
 }
 
 .pp-swatch[aria-pressed="true"]::after {
@@ -626,8 +707,13 @@
   font-size: 12px;
   font-weight: 500;
   transition:
+    transform 120ms var(--ease-out),
     background-color 120ms ease,
     color 120ms ease;
+}
+
+.pp-segment button:active {
+  transform: scale(0.96);
 }
 
 .pp-segment button:hover {
@@ -737,24 +823,43 @@
   max-height: calc(100dvh - 172px - env(safe-area-inset-bottom));
   overflow: hidden;
 
-  background: var(--island-bg);
-  border: 1px solid var(--surface-low);
-  border-radius: 14px;
-  box-shadow:
-    0 16px 40px rgba(0, 0, 0, 0.18),
-    0 2px 8px rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
   transform-origin: 72px 0;
-  animation: pp-popover-in 160ms var(--ease-out);
+  animation: pp-popover-in 260ms var(--ease-spring);
+  will-change: transform, opacity;
 }
 
+/* Materialize from the palette button: the card scales up from the icon and
+   settles with a small overshoot instead of fading in place. */
 @keyframes pp-popover-in {
   from {
     opacity: 0;
-    transform: translateY(-6px) scale(0.98);
+    transform: translateY(-10px) scale(0.92);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(1px) scale(1.006);
   }
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Departures are quieter than arrivals: a short shrink back toward the icon. */
+.pp-popover[data-state="closed"] {
+  animation: pp-popover-out 160ms var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+@keyframes pp-popover-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
   }
 }
 
@@ -796,6 +901,48 @@
 
   .pp-menu {
     animation: none;
+  }
+}
+
+/* Glass that cannot blur becomes solid, never a washed-out half-transparent
+   card. Same when the user asks the system for less transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .pp-dock,
+  .pp-menu-root,
+  .pp-history,
+  .pp-menu,
+  .pp-panel,
+  .pp-popover,
+  .pp-panel-toggle {
+    background: var(--island-bg);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .pp-dock,
+  .pp-menu-root,
+  .pp-history,
+  .pp-menu,
+  .pp-panel,
+  .pp-popover,
+  .pp-panel-toggle {
+    background: var(--island-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .pp-dock,
+  .pp-menu-root,
+  .pp-history,
+  .pp-menu,
+  .pp-panel,
+  .pp-popover,
+  .pp-panel-toggle {
+    box-shadow:
+      0 0 0 1px var(--on-surface),
+      var(--glass-shadow);
   }
 }
 
