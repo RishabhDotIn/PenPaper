@@ -10,7 +10,11 @@ services:
     # then runs inside apps/web so Next resolves the workspace packages.
     buildCommand: npm install -g pnpm@12.16.1 && pnpm install --frozen-lockfile && pnpm --filter web build
     startCommand: pnpm --filter web start
-    healthCheckPath: /b/local
+    healthCheckPath: /
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # Public OAuth client id. Set the value in the Render dashboard; an empty
+      # value simply keeps the app local-only. Never add a client secret here.
+      - key: NEXT_PUBLIC_GOOGLE_CLIENT_ID
+        sync: false
