@@ -12,7 +12,7 @@ import {
   type BoardMeta,
   type BoardSnapshot,
 } from "@/lib/storage";
-import { loadPreferences } from "@/lib/preferences";
+import { forgetBoard, loadPreferences } from "@/lib/preferences";
 import { useSyncStore } from "@/store/sync-store";
 import { DriveAuthError, driveConfigured, ensureSession, hasSession, requestSession } from "./auth";
 import {
@@ -409,11 +409,47 @@ export async function unpublishBoard(boardId: string): Promise<void> {
   });
 }
 
-/** Deletes a board here and, when it belongs to the library, in Drive too. */
-export async function deleteBoardEverywhere(boardId: string): Promise<void> {
+/**
+ * Deletes a board here and, when it belongs to the library, in Drive too.
+ *
+ * `driveFileId` covers a notepad that only exists in Drive: the menu can list
+ * and delete it without ever opening it, so no local card carries the file id.
+ */
+export async function deleteBoardEverywhere(
+  boardId: string,
+  driveFileId?: string,
+): Promise<void> {
   const meta = await loadMeta(boardId);
-  if (meta?.driveFileId) await trashOrRemember(meta.driveFileId);
+  const fileId = meta?.driveFileId ?? driveFileId;
+  if (fileId) await trashOrRemember(fileId);
   await deleteBoard(boardId);
+  // `/` must not try to reopen a notepad that no longer exists.
+  forgetBoard(boardId);
+}
+
+const LIBRARY_SWEEP_KEY = "penpaper:library-sweep:v1";
+const LIBRARY_SWEEP_EVERY_MS = 5 * 60_000;
+
+/**
+ * A quiet library-wide sweep for the board route.
+ *
+ * Opening a notepad reconciles that notepad; the rest of the library would
+ * otherwise wait for a visit to the shelf. Five minutes per tab is often enough
+ * to pick up work started on another device without spending the session's
+ * first seconds on uploads.
+ */
+export function syncLibraryInBackground(): void {
+  if (!driveConfigured() || !hasSession() || !loadPreferences().autoSync) return;
+
+  try {
+    const last = Number(sessionStorage.getItem(LIBRARY_SWEEP_KEY) ?? 0);
+    if (Date.now() - last < LIBRARY_SWEEP_EVERY_MS) return;
+    sessionStorage.setItem(LIBRARY_SWEEP_KEY, String(Date.now()));
+  } catch {
+    // Storage blocked: sweep anyway, it is one pass over the library.
+  }
+
+  void syncLibrary().catch(() => undefined);
 }
 
 /** The remote shelf, for boards this device has never opened. */

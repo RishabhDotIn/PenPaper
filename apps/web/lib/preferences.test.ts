@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_PREFERENCES,
   effectiveTheme,
+  forgetBoard,
   loadPreferences,
+  rememberBoard,
   savePreferences,
 } from "./preferences";
 
@@ -58,6 +60,23 @@ describe("preferences", () => {
   it("treats a non-boolean auto-sync as the default, on", () => {
     store.set("penpaper:prefs:v1", JSON.stringify({ autoSync: "yes" }));
     expect(loadPreferences().autoSync).toBe(true);
+  });
+
+  it("remembers the notepad to reopen and forgets a deleted one", () => {
+    rememberBoard("notepad-7");
+    expect(loadPreferences().lastBoardId).toBe("notepad-7");
+
+    // Forgetting a different notepad must not clear the remembered one.
+    forgetBoard("notepad-8");
+    expect(loadPreferences().lastBoardId).toBe("notepad-7");
+
+    forgetBoard("notepad-7");
+    expect(loadPreferences().lastBoardId).toBeNull();
+  });
+
+  it("drops a remembered id that is not a board id", () => {
+    store.set("penpaper:prefs:v1", JSON.stringify({ lastBoardId: "../../etc/passwd" }));
+    expect(loadPreferences().lastBoardId).toBeNull();
   });
 
   it("falls back to defaults for corrupt JSON", () => {

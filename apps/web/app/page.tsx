@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { Library } from "@/components/Library";
-import "./library.css";
+import { Launcher } from "@/components/Launcher";
+import "./launcher.css";
 
 export const metadata: Metadata = {
-  title: "PenPaper — all notepads",
-  description: "Every notepad on this device, and the ones you keep in Google Drive.",
+  title: "PenPaper",
+  description: "A whiteboard that saves on your device and, if you want, to Google Drive.",
 };
 
-/** The shelf is the front door: pick a notepad, or start a new one. */
+/** Opens the last notepad, or asks which one when this device has none. */
 export default function Home() {
-  return <Library />;
+  return <Launcher />;
 }

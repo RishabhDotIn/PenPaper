@@ -11,6 +11,7 @@ import {
 } from "@penpaper/engine";
 import type { Element } from "@penpaper/shared";
 import { createDemoElements } from "@/lib/demo-board";
+import { markDemoSeen } from "@/lib/library";
 import { loadBoard, saveBoard } from "@/lib/storage";
 import { hasSession } from "@/lib/drive/auth";
 import { pullBoardById } from "@/lib/drive/sync";
@@ -81,6 +82,7 @@ export function BoardLoader({ boardId }: { boardId: string }) {
             } catch (error) {
               console.warn("PenPaper: could not save the demo board locally", error);
             }
+            markDemoSeen();
             if (cancelled) return;
             setHydrated({ elements, camera });
             return;

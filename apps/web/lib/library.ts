@@ -2,6 +2,7 @@ import { SCENE_VERSION } from "@penpaper/engine";
 import type { RemoteBoard } from "@/lib/drive/api";
 import { createDemoElements } from "@/lib/demo-board";
 import {
+  createBoard,
   defaultTitle,
   loadMeta,
   listBoards,
@@ -100,6 +101,21 @@ export async function seedDemoBoard(): Promise<void> {
   }
 }
 
+/**
+ * Marks the example as already seen.
+ *
+ * `/b/demo` seeds the same board without going through the launcher, so it has
+ * to set the flag too: otherwise a demo opened directly, then deleted from the
+ * menu, would be seeded again by the next launcher visit.
+ */
+export function markDemoSeen(): void {
+  try {
+    localStorage.setItem(DEMO_FLAG, "1");
+  } catch {
+    // Storage is unavailable; nothing to remember.
+  }
+}
+
 export async function loadShelf(): Promise<{ local: BoardMeta[]; items: ShelfItem[] }> {
   await seedDemoBoard();
   const local = await listBoards();
@@ -111,6 +127,24 @@ export function newBoardId(): string {
     return crypto.randomUUID();
   }
   return `nb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Creates an empty notepad and returns its id.
+ *
+ * Shared by the launcher, the shelf, and the board menu so all three name a
+ * second blank notepad the same way instead of producing three "Untitled
+ * notepad" cards a person cannot tell apart.
+ */
+export async function createNotepad(): Promise<string> {
+  const id = newBoardId();
+  const used = new Set((await listBoards()).map((board) => board.title));
+
+  let title = "Untitled notepad";
+  for (let index = 2; used.has(title); index += 1) title = `Untitled notepad ${index}`;
+
+  await createBoard(id, { title });
+  return id;
 }
 
 /** "just now", "4m", "3h", "yesterday", "12 Mar". */

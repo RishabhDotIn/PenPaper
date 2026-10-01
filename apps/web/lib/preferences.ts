@@ -27,6 +27,14 @@ export interface Preferences {
    * statement about *this* device's battery and data, not about the boards.
    */
   autoSync: boolean;
+  /**
+   * The notepad `/` hands off to on this device.
+   *
+   * Opening PenPaper should feel like opening a notebook you left on the table,
+   * not a shelf you have to choose from. The id is cleared when that notepad is
+   * deleted, and when the device has never opened one the launcher asks instead.
+   */
+  lastBoardId: string | null;
 }
 
 const KEY = "penpaper:prefs:v1";
@@ -37,11 +45,14 @@ export const DEFAULT_PREFERENCES: Preferences = {
   layout: "lines",
   style: { ...DEFAULT_ELEMENT_STYLE },
   autoSync: true,
+  lastBoardId: null,
 };
 
 const THEMES: ReadonlySet<string> = new Set(["light", "dark", "system"]);
 const LAYOUTS: ReadonlySet<string> = new Set(["none", "dots", "lines"]);
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+/** Board ids go straight into a URL, so the same alphabet the router accepts. */
+const BOARD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -123,6 +134,10 @@ function normalize(raw: unknown): Preferences {
       : DEFAULT_PREFERENCES.layout,
     style: normalizeStyle(raw.style),
     autoSync: typeof raw.autoSync === "boolean" ? raw.autoSync : DEFAULT_PREFERENCES.autoSync,
+    lastBoardId:
+      typeof raw.lastBoardId === "string" && BOARD_ID.test(raw.lastBoardId)
+        ? raw.lastBoardId
+        : null,
   };
 }
 
@@ -148,6 +163,26 @@ export function savePreferences(preferences: Preferences): void {
   } catch {
     // Losing a preference is not worth interrupting a drawing session.
   }
+}
+
+/**
+ * Records the notepad the person is in, so the next visit opens it directly.
+ *
+ * A device preference, not board content: another device may well be in a
+ * different notepad. The write is skipped when nothing changed, because this
+ * runs on every board open.
+ */
+export function rememberBoard(boardId: string): void {
+  const current = loadPreferences();
+  if (current.lastBoardId === boardId) return;
+  savePreferences({ ...current, lastBoardId: boardId });
+}
+
+/** Forgets a notepad that no longer exists, without touching other prefs. */
+export function forgetBoard(boardId: string): void {
+  const current = loadPreferences();
+  if (current.lastBoardId !== boardId) return;
+  savePreferences({ ...current, lastBoardId: null });
 }
 
 /** What the theme preference means right now. */

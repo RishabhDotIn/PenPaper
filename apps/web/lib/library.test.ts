@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import "fake-indexeddb/auto";
 import type { RemoteBoard } from "@/lib/drive/api";
 import type { BoardMeta } from "@/lib/storage";
-import { buildShelf, describeCount, formatAgo } from "./library";
+import { listBoards } from "@/lib/storage";
+import { buildShelf, createNotepad, describeCount, formatAgo } from "./library";
 
 function meta(id: string, patch: Partial<BoardMeta> = {}): BoardMeta {
   return {
@@ -117,5 +119,22 @@ describe("describeCount", () => {
     expect(describeCount(0)).toBe("Empty");
     expect(describeCount(1)).toBe("1 shape");
     expect(describeCount(12)).toBe("12 shapes");
+  });
+});
+
+describe("createNotepad", () => {
+  it("gives two blank notepads distinct names", async () => {
+    const first = await createNotepad();
+    const second = await createNotepad();
+
+    const boards = await listBoards();
+    const titles = boards.map((board) => board.title);
+    expect(new Set(titles).size).toBe(titles.length);
+
+    const firstTitle = boards.find((board) => board.id === first)?.title ?? "";
+    const secondTitle = boards.find((board) => board.id === second)?.title ?? "";
+    expect(firstTitle).toMatch(/^Untitled notepad/);
+    expect(secondTitle).toMatch(/^Untitled notepad/);
+    expect(firstTitle).not.toBe(secondTitle);
   });
 });

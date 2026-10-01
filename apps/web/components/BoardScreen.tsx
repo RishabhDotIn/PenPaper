@@ -6,6 +6,7 @@ import { TextEditorOverlay } from "@/components/TextEditorOverlay";
 import {
   effectiveTheme,
   loadPreferences,
+  rememberBoard,
   savePreferences,
   type Preferences,
 } from "@/lib/preferences";
@@ -14,11 +15,11 @@ import {
   flushSyncQueue,
   queueBoardSync,
   reconcileBoard,
+  syncLibraryInBackground,
 } from "@/lib/drive/sync";
 import { hasSession } from "@/lib/drive/auth";
 import { useSyncStore } from "@/store/sync-store";
 import { useBoardStore } from "@/store/board-store";
-import { useRouter } from "next/navigation";
 import {
   History,
   InputController,
@@ -77,7 +78,6 @@ export interface BoardScreenProps {
  * thousands of re-renders while drawing.
  */
 export function BoardScreen({ boardId, initial }: BoardScreenProps) {
-  const router = useRouter();
   const sceneRef = useRef<Scene | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const controllerRef = useRef<InputController | null>(null);
@@ -98,6 +98,11 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   const toolRef = useRef<Tool>("select");
   const preferencesRef = useRef(preferences);
   preferencesRef.current = preferences;
+
+  // The next visit to `/` opens this notepad, not the shelf.
+  useEffect(() => {
+    rememberBoard(boardId);
+  }, [boardId]);
 
   /**
    * Preferences are read once from the device, then mirrored into the engine.
@@ -426,6 +431,12 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
             .getState()
             .setPhase("error", error instanceof Error ? error.message : "Sync failed");
         });
+
+      // The rest of the library is not this page's job, but it should not wait
+      // for a visit to the shelf either. Long enough after paint to be free.
+      window.setTimeout(() => {
+        if (!cancelled) syncLibraryInBackground();
+      }, 4_000);
     }, 350);
 
     return () => {
@@ -691,6 +702,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
       ) : null}
 
       <BoardChrome
+        boardId={boardId}
         tool={tool}
         onToolChange={changeTool}
         selection={selection}
@@ -703,10 +715,16 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
         styleDefaults={preferences.style}
         onStyleDefaultsChange={setStyleDefault}
         isCreating={CREATION_TOOLS.has(tool)}
-        onOpenLibrary={() => router.push("/")}
         menu={{
           theme: preferences.theme,
           onThemeChange: (theme) => updatePreferences({ theme }),
+          autoSync: preferences.autoSync,
+          onAutoSyncChange: (autoSync) => {
+            updatePreferences({ autoSync });
+            // Turning the whole library back on should catch up now rather than
+            // waiting for the next visit.
+            if (autoSync) syncLibraryInBackground();
+          },
           background: preferences.background,
           onBackgroundChange: (background) => updatePreferences({ background }),
           layout: preferences.layout,

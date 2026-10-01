@@ -8,11 +8,11 @@ lean on, and about the decisions that are easy to undo accidentally.
 
 ```
 apps/web              Next.js App Router shell
-  app/                the shelf at `/`
+  app/                the launcher at `/`: last notepad, or a one-time chooser
   app/b/[id]          one board per route
-  components/         Library, BoardLoader, BoardScreen, BoardSurface, TextEditorOverlay
-  lib/storage.ts      IndexedDB scene + shelf-index stores (idb)
-  lib/library.ts      shelf model, demo seed, relative times
+  components/         Launcher, BoardLoader, BoardScreen, BoardChrome, BoardSurface, TextEditorOverlay
+  lib/storage.ts      IndexedDB scene + notepad index stores (idb)
+  lib/library.ts      notepad list model, demo seed, relative times
   lib/drive/          optional Google Drive sync (auth, REST, merge, reconcile)
   lib/preferences.ts  validated theme/paper/layout/style/auto-sync defaults (localStorage)
   store/board-store.ts  Zustand metadata (status, element count, savedAt)
@@ -147,9 +147,18 @@ state:
   `InputController.setStyle()` holds that default; the panel receives a
   zero-sized preview element built from it, so the same form code serves both
   cases without a second component.
-- **`AppMenu`** — the hamburger popover: undo/redo, theme, paper colour, layout,
-  PNG export, and reset. Appearance actions keep the popover open so themes can
-  be compared; one-shot and destructive actions close it.
+- **`AppMenu`** — the hamburger popover: the account and Drive state, the
+  notepad list (open, rename, delete, and per-notepad sync), undo/redo, theme,
+  paper colour, layout, PNG export, and reset. Appearance actions keep the
+  popover open so themes can be compared; one-shot and destructive actions
+  close it. The list is a second view inside the same popover, not a route:
+  switching notepads is a one-tap move mid-drawing, and renaming or deleting one
+  never costs a navigation away from the canvas.
+
+The island and its popover are siblings, not nested: a `backdrop-filter`
+ancestor creates a backdrop root, and a descendant blur would then sample that
+root (nothing) instead of the canvas. Keeping them siblings is what preserves
+the glass material over the drawing.
 
 Choosing a tool other than `select` or `hand` clears the selection, so the
 panel's target follows intent: after tapping "rectangle" the panel means "the
@@ -166,6 +175,28 @@ deliberately are never rewritten.
 
 The default style follows the same rule: switching theme moves the default pen
 between `#1e1e1e` and `#e3e3e8` only while it is still a default ink.
+
+## Routes and the launcher
+
+`/` is a hand-off, not a catalogue. `Launcher` reads `lastBoardId` from device
+preferences and `router.replace`s to `/b/<id>` when that notepad still exists
+locally, and — with an account connected — when Drive still has it. A stale id
+is cleared rather than followed, so a deleted notepad never opens as a blank
+board under a dead id. Only a device that has never opened one, or whose last
+one is gone, sees the chooser: recent notepads as rows on paper, a New notepad
+button, and an optional Connect Drive button.
+
+There is no separate management route. The hamburger's notepad list carries
+open, rename (inline input), delete (one arming tap, then Delete), and — with
+auto-sync off — a per-notepad Sync / Remove from Drive action. The root menu
+holds the All notepads / Choose switch. Rename writes the device card and queues
+the Drive file rename on the next upload; delete trashes the file and clears
+`lastBoardId` when it was the remembered one.
+
+`lastBoardId` is a device preference (`rememberBoard` on board mount,
+`forgetBoard` on delete) and is validated against the same id alphabet the
+route accepts. Two devices signed into one account may sit in different
+notepads; that is correct, not a conflict.
 
 ## Persistence and hydration
 
@@ -194,7 +225,8 @@ under `penpaper:prefs:v1`:
 
 ```ts
 { theme: "light" | "dark" | "system", background: string | null,
-  layout: "none" | "dots" | "lines", style: StyleDefaults, autoSync: boolean }
+  layout: "none" | "dots" | "lines", style: StyleDefaults, autoSync: boolean,
+  lastBoardId: string | null }
 ```
 
 Theme, paper, layout, and the next-element style are device facts, not board
@@ -208,11 +240,13 @@ The canvas has no `localStorage`, so these values are pushed into the renderer
 at startup and through `setTheme`, `setBackground`, and `setPattern` whenever
 they change.
 
-The shelf seeds one demo notepad on a new install, and `/b/demo` seeds the same
-diagram if opened directly: text, freedraw, filled rectangles, and arrows,
-written before the canvas mounts. After that first write it is an ordinary
-board, so edits, renaming, and the camera persist and the demo is never injected
-over user work. A `localStorage` flag stops a deleted demo from returning.
+The launcher and the menu share `createNotepad`, so a second blank notepad is named
+`Untitled notepad 2` rather than producing cards a person cannot tell apart. The
+first run seeds one demo notepad, and `/b/demo` seeds the same diagram if opened
+directly: text, freedraw, filled rectangles, and arrows, written before the
+canvas mounts. After that first write it is an ordinary board, so edits,
+renaming, and the camera persist and the demo is never injected over user work.
+A `localStorage` flag stops a deleted demo from returning.
 
 ## Google Drive sync (optional)
 
@@ -223,9 +257,9 @@ silently does nothing when no account is connected.
 **No server.** The browser uses Google Identity Services' token model: a popup
 returns an access token valid for about an hour. The token lives in
 `sessionStorage`, so it dies with the tab; the account name and picture live in
-`localStorage` so the shelf can offer one-tap reconnect. There is no client
-secret, no refresh token, no backend, and no database. The only configuration is
-the public `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+`localStorage` so the board menu can show who is connected and reconnect in one
+tap. There is no client secret, no refresh token, no backend, and no database.
+The only configuration is the public `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
 **Scope.** `drive.file` plus `openid email profile`. `drive.file` is
 non-sensitive: the app sees the files it created, not the rest of the user's
@@ -242,7 +276,7 @@ with app-private properties (`penpaper=1`, `boardId`) so renaming the folder in
 Drive does not strand the app. The camera is deliberately absent: a phone should
 not inherit a laptop's zoom.
 
-**The shelf index.** IndexedDB v2 keeps a separate `meta` store so the shelf
+**The notepad index.** IndexedDB v2 keeps a separate `meta` store so the menu
 lists titles and counts without reading every scene. Each card also records this
 device's relationship to Drive: `driveFileId`, the last agreed `driveVersion`,
 `syncedAt`, and `inLibrary`. Those fields describe the device, not the board, so
@@ -270,8 +304,15 @@ only writers are the same account's devices, and the merge makes a lost race
 non-destructive.
 
 **Enablement.** `autoSync` (device preference, default on) syncs the whole
-shelf. Turned off, only boards with `inLibrary` or a known file id move, and the
-shelf shows a per-board Sync button.
+library. Turned off from the menu, only boards with `inLibrary` or a known file
+id move, and each row in the notepad list grows a per-notepad Sync / Remove from
+Drive action.
+
+**Background sweep.** Opening a notepad reconciles that notepad after the first
+paint; a library-wide pass runs about four seconds later, throttled to once per
+five minutes per tab in `sessionStorage`. Work started on another device
+therefore appears without any extra visit, and an ordinary reload does not spend
+its first seconds on uploads.
 
 **Failure is local failure.** The 1.2 s push debounce never throws into the
 canvas; a failed push is reported in the sync store and the board stays on the
@@ -367,17 +408,19 @@ so that phase changes the transport, not the data model.
 - **Engine unit tests** cover scene semantics, fractional indices, camera math,
   bounds, quadtree, hit testing, transforms, history, serialization, text
   layout, rendering primitives, and the rough cache.
-- **Web unit tests** cover IndexedDB persistence and the shelf index, the Zustand
-  metadata store, preferences, Drive file naming and per-element merge, and the
-  reconciler against a mocked Drive with a real IndexedDB — pull, merge, save,
-  upload order, coalescing, and recovery from a file deleted in Drive.
-- **Playwright** covers the seams that only a real browser can prove: the shelf
-  (seed, new, rename, delete, the Drive-off hint), responsive chrome and 44 px
-  targets, a drag as one undo step, a style chosen before any element exists,
-  theme and paper changes verified in canvas pixels, autosave surviving reload,
-  board isolation, camera restoration, text overlay focus/IME-ish behaviour, the
-  1,000-element frame budget, manifest/icons, and the offline shell in a
-  production build.
+- **Web unit tests** cover IndexedDB persistence and the notepad index, the Zustand
+  metadata store, preferences (including the remembered notepad), Drive file
+  naming and per-element merge, and the reconciler against a mocked Drive with a
+  real IndexedDB — pull, merge, save, upload order, coalescing, and recovery
+  from a file deleted in Drive.
+- **Playwright** covers the seams that only a real browser can prove: the
+  launcher (fresh device, remembered notepad, deleted-last fallback), the menu's
+  account block and notepad list (new, rename, delete, 44 px row actions), the
+  demo seed and the Drive-off hint, responsive chrome, a drag as one undo step,
+  a style chosen before any element exists, theme and paper changes verified in
+  canvas pixels, autosave surviving reload, board isolation, camera restoration,
+  text overlay focus/IME-ish behaviour, the 1,000-element frame budget,
+  manifest/icons, and the offline shell in a production build.
 
 Device automation for the Poco F6 and Xiaomi Pad 7 is still a manual pass. iOS
 and Apple Pencil remain targeted but unverified.

@@ -11,10 +11,15 @@ network does not.
 | --- | --- |
 | ![PenPaper on desktop](docs/screenshots/penpaper-desktop.png) | ![PenPaper on a phone](docs/screenshots/penpaper-phone.png) |
 
-The shelf at `/` lists every notepad on the device. Connecting Google Drive adds
-the same cards on every device signed into that account.
+Opening `/` returns to the notepad you were last in. A device that has not
+opened one yet gets a single card on paper: recent notepads, a blank page, and —
+once an account is connected — everything Drive holds. The hamburger carries the
+account and the full notepad list, where a notepad can be opened, renamed,
+deleted, or synced without leaving the canvas.
 
-![The PenPaper shelf](docs/screenshots/penpaper-shelf.png)
+![The one-time chooser](docs/screenshots/penpaper-launcher.png)
+
+![The board menu, with the account and the notepad list](docs/screenshots/penpaper-menu-notepads.png)
 
 ## What works today (Phase 1)
 
@@ -52,15 +57,16 @@ the same cards on every device signed into that account.
 - **A seeded demo board** at `/b/demo` — title, hand-drawn underline, three
   filled flow boxes, arrows, and notes — so the first open is not a blank page.
 
-- **A shelf of notepads at `/`** with a seeded demo, rename, delete, and one
-  card per board. `/b/<id>` opens a notepad, and the board menu leads back.
+- **A notepad list in the menu** with a seeded demo, inline rename, two-tap
+  delete, one-tap switching, and a new-notepad action. `/` reopens the last
+  notepad and only asks once, on paper; there is no separate management page.
 - **Optional Google Drive sync.** Connect one Google account and the same
   notepads appear on every device, stored as JSON files in a visible `PenPaper`
-  folder. Auto-sync can be switched off for per-notepad control. The browser
-  talks to Drive directly with an hour-long token: no backend, no secret, no
-  refresh token. Setup is one public client ID — see
-  [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md). Without it, the app stays
-  local-only.
+  folder. Auto-sync can be switched to per-notepad control, which adds a Sync /
+  Remove from Drive action to each row. The browser talks to Drive directly with
+  an hour-long token: no backend, no secret, no refresh token. Setup is one
+  public client ID — see [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md). Without
+  it, the app stays local-only.
 
 Not yet: real-time collaboration, image upload, and arrow binding. Those are the
 next phases in
@@ -89,12 +95,15 @@ pnpm install
 pnpm --filter web dev          # http://localhost:3000
 ```
 
-`/` is the shelf. It seeds a demo notepad on the first visit, then lists every
-notepad on the device; `/b/local` and `/b/<id>` open a board directly.
+`/` opens the notepad this device last opened. Until one has been opened, it
+shows the chooser: recent notepads, a new blank page, and the Drive list once an
+account is connected. `/b/local` and `/b/<id>` open a board directly. Deleting
+the remembered notepad clears the memory rather than opening an empty board
+under a dead id.
 
 Google Drive sync stays off until `apps/web/.env.local` contains a public OAuth
 client ID. See [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md); without it the
-app is fully local and says so on the shelf.
+app is fully local and says so on the launcher and in the menu.
 
 Use `localhost`, not `127.0.0.1`: Next's dev-server cross-origin rules treat the
 two as different origins and hydration silently stops.
@@ -125,10 +134,10 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 | Metric | Result | Gate |
 | --- | --- | --- |
 | Engine unit tests | 171 passing | all green |
-| Web unit tests | 64 passing | all green |
+| Web unit tests | 67 passing | all green |
 | Browser tests | 40 passing | all green |
 | Median renderer frame body, 1,000 mixed shapes | 7.4–9.3 ms production | ≤ 16 ms |
-| Board route transfer, gzip | 175.4 KiB JS + CSS | ≤ 220 kB |
+| Board route transfer, gzip | 179.3 KiB JS + CSS | ≤ 220 kB |
 
 The frame measurement is the renderer's own body (cull, layout, paint commands),
 not `requestAnimationFrame` deltas, which are clamped to the display refresh rate

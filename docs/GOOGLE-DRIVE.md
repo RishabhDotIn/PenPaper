@@ -3,6 +3,8 @@
 PenPaper is local-first. Every notepad is written to IndexedDB on the device
 immediately and works offline. Drive sync is an **optional extra** that makes the
 same notepads appear on every device signed into the same Google account.
+Opening `/` reopens the last notepad on that device; the hamburger shows who is
+connected and switches between notepads without leaving the canvas.
 
 It costs ₹0 and needs no server of its own:
 
@@ -75,8 +77,19 @@ Environment Variable**) and redeploy. The included `render.yaml` declares the
 variable with `sync: false`, so its value is set in the dashboard and never
 committed.
 
-If the variable is missing, the app stays fully usable and the shelf says
-"Google Drive is not configured on this build". Nothing breaks.
+If the variable is missing, the app stays fully usable: the launcher, the board
+menu, and the launcher all say that Drive is not configured on this build. Nothing
+breaks.
+
+## Where to connect
+
+- **Board menu → account block** — the primary path. It shows the signed-in
+  name, email, and picture, or "On this device" with a **Connect** button.
+- **Launcher (`/`)** — a **Connect Drive** button, for a fresh device whose
+  notepads are already in Drive.
+
+Signing in must start from one of those clicks: Google's token popup is allowed
+only in response to a user gesture.
 
 ## What syncs
 
@@ -84,8 +97,8 @@ If the variable is missing, the app stays fully usable and the shelf says
   **PenPaper** folder in **My Drive**. You can open, download, copy, or delete
   those files yourself.
 - The drawing and the title. **Not** the camera: zoom and scroll are per device.
-- Deletions. Deleting a synced notepad from the shelf moves its Drive file to
-  the trash.
+- Deletions. Deleting a synced notepad from the menu's notepad list moves its
+  Drive file to the trash.
 
 The folder and files are tagged with app-private properties, so PenPaper finds
 them even if you rename the folder in Drive. Each file has a stable `boardId`;
@@ -93,10 +106,10 @@ the URL of a notepad is `/b/<boardId>` on every device.
 
 ### Auto-sync
 
-The switch in the shelf header is **on** by default once an account is
-connected: every notepad travels. Turn it off to choose per notepad with the
-**Sync** / **Remove from Drive** button on each card. The preference is stored
-on the device, not in the account.
+The **Drive sync** switch in the board menu is **on** by default once an account
+is connected: every notepad travels. Turn it to **Choose** to sync per notepad
+with the **Sync** / **Remove from Drive** cloud button on each row. The
+preference is stored on the device, not in the account.
 
 ### Conflicts
 
@@ -131,9 +144,9 @@ refresh token is stored anywhere.
 
 - Token: browser `sessionStorage`, cleared with the tab; sent only to
   `googleapis.com`.
-- Account name, email, and picture: `localStorage`, so the shelf can say who is
-  connected; no token is stored with them.
+- Account name, email, and picture: `localStorage`, so the board menu can show
+  who is connected; no token is stored with them.
 - Board contents: the user's own Google Drive. PenPaper has no server that sees
   them.
 - Disconnect removes the local token and forgets the account on that device. It
-  does not delete anything from Drive; the shelf's delete action does that.
+  does not delete anything from Drive; **Delete** in the notepad list does that.

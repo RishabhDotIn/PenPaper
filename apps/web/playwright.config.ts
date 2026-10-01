@@ -28,6 +28,11 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !production && !process.env.CI,
     timeout: 300_000,
-    env: production ? { NEXT_PUBLIC_E2E: "1" } : {},
+    // Tests run without a Google client id on purpose: the local-only app is the
+    // default, and Drive cannot be exercised without a real account anyway.
+    env: {
+      ...(production ? { NEXT_PUBLIC_E2E: "1" } : {}),
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: "",
+    },
   },
 });
