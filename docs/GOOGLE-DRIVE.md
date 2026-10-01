@@ -28,21 +28,24 @@ to commit to a deployment dashboard (but keep it in `.env.local`, not the repo).
 1. Open <https://console.cloud.google.com/> and create a project, for example
    `PenPaper`. A project is free.
 2. **APIs & Services → Library → Google Drive API → Enable.**
-3. **APIs & Services → OAuth consent screen**
-   - User type: **External**.
-   - App name: `PenPaper`; support email: your address; developer contact: your
-     address.
-   - **Scopes:** add
+3. **APIs & Services → OAuth consent screen.** Google now calls this the
+   **Google Auth Platform**, with the consent screen split into three pages:
+   - **Branding** — app name `PenPaper`, your support email, developer contact.
+   - **Audience** — user type **External**. While the app is in **Testing**, add
+     your own Google account under **Test users**; only listed accounts can
+     connect, and the consent screen shows an "unverified app" warning that you
+     dismiss with **Advanced → Continue**. Testing is free and needs no review.
+   - **Data Access** — **Add or remove scopes** and add
      `https://www.googleapis.com/auth/drive.file`,
-     `.../auth/userinfo.email`, and `.../auth/userinfo.profile`.
-   - While the app is in **Testing**, add your own Google account under **Test
-     users**. Testing mode works indefinitely for up to 100 named testers; the
-     consent screen shows an "unverified app" warning that you can dismiss with
-     **Advanced → Continue**.
-   - For public use, press **Publish app**. `drive.file` is a non-sensitive
-     scope, so this is the straightforward verification path, not the paid CASA
-     security assessment that restricted scopes require. Publishing is not
-     needed to use it yourself.
+     `.../auth/userinfo.email`, and `.../auth/userinfo.profile`. On this page
+     `drive.file` is listed as **non-sensitive**; keep it that way.
+   - For public use, **Audience → Publish app** moves the app to *In
+     production*, lifting the 100-test-user cap. Because `drive.file` is
+     non-sensitive this needs no OAuth verification and no CASA security
+     assessment — the assessment only applies to restricted scopes such as
+     `drive` or `drive.readonly`. Branding may still show an unverified notice
+     until brand verification is done; that does not block sign-in. Publishing
+     is not needed to use it yourself.
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**
    - Application type: **Web application**.
    - Name: `PenPaper web`.
@@ -115,7 +118,8 @@ refresh token is stored anywhere.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `Access blocked: … has not completed the verification process` | Add your account under **Test users**, or publish the consent screen. |
+| `Access blocked: … has not completed the verification process` | Your account is missing from **Audience → Test users**. Add it, or publish the app. |
+| No "OAuth consent screen" in the menu | It is now **Google Auth Platform** (<https://console.cloud.google.com/auth/overview>) with **Branding**, **Audience**, and **Data Access** pages. |
 | `Error 400: redirect_uri_mismatch` | Wrong client type. Create a **Web application** client and add the exact page origin under **Authorized JavaScript origins**, not redirect URIs. |
 | `The given origin is not allowed` | The origin in the address bar is not listed. Add `http://localhost:3000` or the deployed `https://…` origin. |
 | `invalid_client` | The client ID is truncated or belongs to another project. Copy the whole value. |
