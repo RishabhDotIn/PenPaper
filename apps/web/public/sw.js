@@ -19,7 +19,10 @@
  * the collaborative socket in Phase 3 must never see a stale response.
  */
 
-const VERSION = "penpaper-v2";
+// Bump this when a release changes the shell: `activate` deletes every cache
+// that does not start with the new version, so an installed app cannot keep
+// serving the old menu from a cached page.
+const VERSION = "penpaper-v3";
 const PRECACHE = `${VERSION}-core`;
 const RUNTIME = `${VERSION}-runtime`;
 

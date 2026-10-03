@@ -344,6 +344,14 @@ through it.
 Registration is production-only by default, with `?sw=1` as a development
 opt-in. This keeps `next dev` and the e2e suite away from yesterday's chunks.
 
+The worker doubles as the update channel. A tab that was already controlled
+keeps the JavaScript it loaded with, so a shipped menu change would otherwise
+stay invisible until a manual hard refresh. `ServiceWorkerRegistrar` asks for a
+new worker whenever the page becomes visible; when one takes over, the page is
+marked stale and reloads the next time it is hidden, so the swap never lands
+mid-stroke. Bumping `VERSION` in `sw.js` also deletes the previous release's
+caches on activate.
+
 ## Performance budget
 
 Two gates run in CI and locally:
