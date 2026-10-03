@@ -23,7 +23,24 @@ export function ServiceWorkerRegistrar() {
 
     const dev = process.env.NODE_ENV !== "production";
     const optedIn = new URLSearchParams(window.location.search).has("sw");
-    if (dev && !optedIn) return;
+    if (dev && !optedIn) {
+      // A worker left behind by `next start` on the same origin (localhost) is
+      // the one stale-bundle trap development cannot otherwise see: it keeps
+      // serving yesterday's chunks and every edit looks like it did nothing.
+      // Development owns this origin's cache, so clear it instead of trusting
+      // it. The PWA test opts back in with `?sw=1`.
+      void navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((r) => r.unregister())))
+        .then(() => (typeof caches === "undefined" ? [] : caches.keys()))
+        .then((keys) =>
+          Promise.all(
+            keys.filter((key) => key.startsWith("penpaper-")).map((key) => caches.delete(key)),
+          ),
+        )
+        .catch(() => undefined);
+      return;
+    }
 
     // First install also fires `controllerchange` (the worker claims this
     // page). That page already has the current build, so only a replaced
