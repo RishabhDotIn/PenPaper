@@ -15,7 +15,7 @@
  * to float. The saturation boost is what makes it look lit instead of frosted.
  */
 .pp-dock,
-.pp-menu-root,
+.pp-menu-island,
 .pp-history,
 .pp-menu,
 .pp-panel,
@@ -155,17 +155,24 @@
 
 /* The left island: hamburger, plus the style trigger on touch widths. One
    island instead of two so the top edge stays quiet. */
+/*
+ * The island and the popover are siblings, never nested glass: a
+ * `backdrop-filter` ancestor creates a backdrop root, and a descendant filter
+ * would then sample that root (nothing) instead of the canvas. The menu would
+ * become flat transparency over the drawing.
+ */
 .pp-menu-root {
   position: fixed;
   z-index: 38;
   top: max(12px, env(safe-area-inset-top));
   left: 12px;
+}
 
+.pp-menu-island {
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 4px;
-
   border-radius: 10px;
 }
 
@@ -211,7 +218,7 @@
 }
 
 @media (pointer: coarse) {
-  .pp-menu-root {
+  .pp-menu-island {
     padding: 0 2px;
   }
 
@@ -325,6 +332,408 @@
   font-size: 11px;
   line-height: 1.4;
   color: var(--on-surface-muted);
+}
+
+/* ------------------------------------------------- menu: identity + list */
+
+/* Each view fades in from the side the way a stacked panel does: enough to
+   show the menu changed depth, short enough to feel like the same surface. */
+.pp-menu-view {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: pp-view-in 180ms var(--ease-out);
+}
+
+@keyframes pp-view-in {
+  from {
+    opacity: 0.4;
+    transform: translateX(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.pp-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 6px;
+  margin-bottom: 2px;
+}
+
+.pp-menu-back {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--on-surface);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    transform 120ms var(--ease-out),
+    background-color 120ms ease;
+}
+
+.pp-menu-back:active {
+  transform: scale(0.9);
+}
+
+@media (hover: hover) {
+  .pp-menu-back:hover {
+    background: var(--surface-low);
+  }
+}
+
+.pp-menu-back svg {
+  width: 17px;
+  height: 17px;
+}
+
+.pp-menu-heading {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--on-surface-muted);
+}
+
+/* The account is a quiet card, not a second header: name and address on one
+   line each, one action on the right. */
+.pp-menu-account {
+  padding: 2px 2px 6px;
+}
+
+.pp-account {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  background: var(--surface-low);
+}
+
+.pp-account-avatar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.pp-account-avatar-fallback {
+  display: grid;
+  place-items: center;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pp-account-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pp-account-name,
+.pp-account-mail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-account-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.pp-account-mail {
+  color: var(--on-surface-muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.pp-account-action {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--on-surface);
+  background: var(--surface-container);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 120ms var(--ease-out),
+    background-color 120ms ease;
+}
+
+.pp-account-action:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+@media (hover: hover) {
+  .pp-account-action:hover:not(:disabled) {
+    background: var(--surface-mid);
+  }
+}
+
+.pp-account-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pp-account-error {
+  margin: 6px 2px 0;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* Connecting is the one action worth tinting. */
+.pp-account-connect {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+@media (hover: hover) {
+  .pp-account-connect:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+  }
+}
+
+.pp-notepads {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: min(46dvh, 300px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* A row is the notepad plus its housekeeping. The actions sit beside the
+   open button, never inside it: nesting a button in a button is invalid, and a
+   rename tap must not also navigate. */
+.pp-notepad-row {
+  display: flex;
+  align-items: stretch;
+  border-radius: 8px;
+  transition: background-color 120ms ease;
+}
+
+@media (hover: hover) {
+  .pp-notepad-row:hover {
+    background: var(--surface-low);
+  }
+}
+
+.pp-notepad-row[data-current="true"] {
+  background: color-mix(in srgb, var(--primary) 11%, transparent);
+}
+
+.pp-notepad-row[data-current="true"] .pp-notepad-title {
+  color: var(--primary);
+}
+
+.pp-notepad {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 4px 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--on-surface);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 120ms var(--ease-out);
+}
+
+.pp-notepad:active {
+  transform: scale(0.985);
+}
+
+.pp-notepad-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 1px;
+  padding: 0 3px 0 0;
+  opacity: 0.62;
+  transition: opacity 120ms ease;
+}
+
+.pp-notepad-row:hover .pp-notepad-actions,
+.pp-notepad-row:focus-within .pp-notepad-actions {
+  opacity: 1;
+}
+
+.pp-notepad-action {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: var(--on-surface-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    transform 120ms var(--ease-out),
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.pp-notepad-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.pp-notepad-action:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+@media (hover: hover) {
+  .pp-notepad-action:hover:not(:disabled) {
+    color: var(--on-surface);
+    background: var(--surface-container);
+  }
+}
+
+.pp-notepad-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The armed state is wider than an icon because "Delete" must read as a
+   sentence, not a symbol a person has to decode mid-tap. */
+.pp-notepad-action.pp-notepad-confirm {
+  width: auto;
+  padding: 0 9px;
+  color: var(--on-danger);
+  background: var(--danger);
+  font-size: 11px;
+  font-weight: 620;
+}
+
+@media (hover: hover) {
+  .pp-notepad-action.pp-notepad-confirm:hover:not(:disabled) {
+    color: var(--on-danger);
+    background: var(--danger);
+  }
+}
+
+.pp-notepad-input {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  color: var(--on-surface);
+  background: var(--surface-lowest);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  outline: none;
+}
+
+.pp-notepad-title,
+.pp-notepad-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-notepad-title {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.pp-notepad-cloud {
+  display: inline-flex;
+  margin-left: 5px;
+  vertical-align: -2px;
+  color: var(--on-surface-muted);
+}
+
+.pp-notepad-cloud svg {
+  width: 11px;
+  height: 11px;
+}
+
+.pp-notepad-meta {
+  color: var(--on-surface-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.pp-notepad-error {
+  margin: 4px 10px 2px;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.pp-menu-empty {
+  margin: 4px 10px 10px;
+  color: var(--on-surface-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pp-menu-count {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--on-surface-muted);
+  background: var(--surface-low);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+  .pp-menu-back {
+    width: 44px;
+    height: 44px;
+  }
+
+  .pp-notepad-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .pp-notepad-action svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .pp-notepad-action.pp-notepad-confirm {
+    width: auto;
+    min-width: 60px;
+    padding: 0 12px;
+  }
+
+  .pp-notepad-row {
+    min-height: 52px;
+  }
 }
 
 .pp-sync-dot {
@@ -944,13 +1353,17 @@
   .pp-menu {
     animation: none;
   }
+
+  .pp-menu-view {
+    animation: none;
+  }
 }
 
 /* Glass that cannot blur becomes solid, never a washed-out half-transparent
    card. Same when the user asks the system for less transparency. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .pp-dock,
-  .pp-menu-root,
+  .pp-menu-island,
   .pp-history,
   .pp-menu,
   .pp-panel,
@@ -962,7 +1375,7 @@
 
 @media (prefers-reduced-transparency: reduce) {
   .pp-dock,
-  .pp-menu-root,
+  .pp-menu-island,
   .pp-history,
   .pp-menu,
   .pp-panel,
@@ -976,7 +1389,7 @@
 
 @media (prefers-contrast: more) {
   .pp-dock,
-  .pp-menu-root,
+  .pp-menu-island,
   .pp-history,
   .pp-menu,
   .pp-panel,

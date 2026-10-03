@@ -3,6 +3,7 @@ export {
   CANVAS_BACKGROUNDS,
   type AppMenuProps,
   type CanvasLayout,
+  type NotepadEntry,
   type ThemeChoice,
 } from "./app-menu";
 export { PaletteIcon, ToolIcon } from "./icons";

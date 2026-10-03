@@ -7,18 +7,36 @@ import {
   StylePopover,
   Toolbar,
   type CanvasLayout,
+  type NotepadEntry,
   type ThemeChoice,
 } from "@penpaper/ui";
 import { createElement, type StyleDefaults, type Tool } from "@penpaper/engine";
 import type { Element, ElementType } from "@penpaper/shared";
-import { useEffect, useMemo, useState } from "react";
-import { useDriveSession } from "@/lib/drive/use-drive-session";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { driveConfigured, requestSession, signOut } from "@/lib/drive/auth";
 import { describeSync } from "@/lib/drive/status";
+import {
+  deleteBoardEverywhere,
+  publishBoard,
+  pullBoardById,
+  queueBoardSync,
+  syncLibrary,
+  unpublishBoard,
+} from "@/lib/drive/sync";
+import { useDriveSession } from "@/lib/drive/use-drive-session";
+import { createNotepad, describeCount, formatAgo } from "@/lib/library";
+import { loadPreferences } from "@/lib/preferences";
+import { loadMeta, renameBoard } from "@/lib/storage";
+import { useNotepads } from "@/lib/use-notepads";
 import { useSyncStore } from "@/store/sync-store";
 
 export interface BoardMenuProps {
   theme: ThemeChoice;
   onThemeChange: (theme: ThemeChoice) => void;
+  /** Device preference: sync the whole library, or choose per notepad. */
+  autoSync: boolean;
+  onAutoSyncChange: (autoSync: boolean) => void;
   background: string | null;
   onBackgroundChange: (color: string | null) => void;
   layout: CanvasLayout;
@@ -28,6 +46,7 @@ export interface BoardMenuProps {
 }
 
 export interface BoardChromeProps {
+  boardId: string;
   tool: Tool;
   onToolChange: (tool: Tool) => void;
   selection: readonly Element[];
@@ -42,8 +61,6 @@ export interface BoardChromeProps {
   onStyleDefaultsChange: (patch: Partial<Element>) => void;
   /** A drawing tool is active, so there is a "next element" to style. */
   isCreating: boolean;
-  /** Back to the shelf; the menu item is the only way off a board. */
-  onOpenLibrary: () => void;
   menu: BoardMenuProps;
 }
 
@@ -60,6 +77,7 @@ export interface BoardChromeProps {
  * exists at all.
  */
 export function BoardChrome({
+  boardId,
   tool,
   onToolChange,
   selection,
@@ -72,18 +90,21 @@ export function BoardChrome({
   styleDefaults,
   onStyleDefaultsChange,
   isCreating,
-  onOpenLibrary,
   menu,
 }: BoardChromeProps) {
+  const router = useRouter();
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popoverMounted, setPopoverMounted] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [busy, setBusy] = useState<"connect" | "create" | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   const session = useDriveSession();
   const phase = useSyncStore((state) => state.phase);
   const notice = useSyncStore((state) => state.message);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const sync = describeSync(Boolean(session), phase, lastSyncedAt, notice);
+  const notepads = useNotepads();
 
   const showStyle = selection.length > 0 || isCreating;
 
@@ -139,6 +160,150 @@ export function BoardChrome({
 
   const styleValue = selection.length > 0 ? selection : [preview];
 
+  const entries = useMemo<NotepadEntry[]>(
+    () =>
+      (notepads.items ?? []).map((item) => ({
+        id: item.id,
+        title: item.title,
+        meta: [describeCount(item.elementCount), formatAgo(item.updatedAt)]
+          .filter(Boolean)
+          .join(" · "),
+        active: item.id === boardId,
+        inDrive: item.inLibrary,
+        fileId: item.driveFileId,
+      })),
+    [notepads.items, boardId],
+  );
+
+  const openNotepads = useCallback(() => {
+    void notepads.refreshLocal();
+    void notepads.refreshRemote();
+  }, [notepads]);
+
+  const openNotepad = useCallback(
+    (id: string) => {
+      if (id !== boardId) router.push(`/b/${id}`);
+    },
+    [boardId, router],
+  );
+
+  const startNotepad = useCallback(async () => {
+    setBusy("create");
+    try {
+      const id = await createNotepad();
+      router.push(`/b/${id}`);
+    } catch {
+      setConnectError("Could not create a notepad on this device");
+    } finally {
+      setBusy(null);
+    }
+  }, [router]);
+
+  /**
+   * Rename from the switcher.
+   *
+   * A notepad that lives only in Drive has no local card yet, so it is pulled
+   * once first; renameBoard works from the card. The next upload renames the
+   * file itself, so the two never drift apart.
+   */
+  const renameNotepad = useCallback(
+    async (id: string, title: string) => {
+      if (!(await loadMeta(id))) await pullBoardById(id);
+      const meta = await renameBoard(id, title);
+      if (!meta) throw new Error("Notepad is not available on this device");
+      if (meta.driveFileId) queueBoardSync(id);
+      await notepads.refreshLocal();
+    },
+    [notepads],
+  );
+
+  const removeNotepad = useCallback(
+    async (id: string, fileId?: string) => {
+      await deleteBoardEverywhere(id, fileId);
+      await notepads.refreshLocal();
+      await notepads.refreshRemote();
+      // Deleting the notepad you are in leaves the next visit with the chooser,
+      // which is clearer than silently opening a different notepad.
+      if (id === boardId) router.replace("/");
+    },
+    [boardId, notepads, router],
+  );
+
+  const toggleDriveNotepad = useCallback(
+    async (id: string, inDrive: boolean) => {
+      if (inDrive) await unpublishBoard(id);
+      else await publishBoard(id);
+      await notepads.refreshLocal();
+      await notepads.refreshRemote();
+    },
+    [notepads],
+  );
+
+  const connect = useCallback(async () => {
+    setBusy("connect");
+    setConnectError(null);
+    try {
+      await requestSession();
+      if (loadPreferences().autoSync) await syncLibrary().catch(() => undefined);
+      await notepads.refreshRemote();
+    } catch (cause) {
+      setConnectError(cause instanceof Error ? cause.message : "Could not connect to Google Drive");
+    } finally {
+      setBusy(null);
+    }
+  }, [notepads]);
+
+  const disconnect = useCallback(() => {
+    signOut();
+    setConnectError(null);
+  }, []);
+
+  const configured = driveConfigured();
+
+  const account = (
+    <div className="pp-account">
+      {session ? (
+        <>
+          <AccountAvatar picture={session.account.picture} name={session.account.name} small />
+          <span className="pp-account-copy">
+            <span className="pp-account-name">{session.account.name}</span>
+            <span className="pp-account-mail">{session.account.email}</span>
+          </span>
+          <button type="button" className="pp-account-action" onClick={disconnect}>
+            Sign out
+          </button>
+        </>
+      ) : (
+        <>
+          <span className="pp-account-avatar pp-account-avatar-fallback" aria-hidden="true">
+            <CloudIcon />
+          </span>
+          <span className="pp-account-copy">
+            <span className="pp-account-name">On this device</span>
+            <span className="pp-account-mail">
+              {configured ? "Connect to open from Drive" : "Drive is not set up here"}
+            </span>
+          </span>
+          <button
+            type="button"
+            className="pp-account-action pp-account-connect"
+            data-testid="menu-connect-drive"
+            onClick={() => void connect()}
+            disabled={!configured || busy !== null}
+            title={configured ? undefined : "NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set in this build"}
+          >
+            {busy === "connect" ? "Connecting…" : "Connect"}
+          </button>
+        </>
+      )}
+      {connectError ? (
+        <p className="pp-account-error" role="alert">
+          {connectError}
+        </p>
+      ) : null}
+    </div>
+  );
+
   return (
     <>
       <AppMenu
@@ -147,7 +312,16 @@ export function BoardChrome({
         onRedo={onRedo}
         canUndo={canUndo}
         canRedo={canRedo}
-        onOpenLibrary={onOpenLibrary}
+        autoSync={menu.autoSync}
+        onAutoSyncChange={session ? menu.onAutoSyncChange : undefined}
+        account={account}
+        notepads={entries}
+        onOpenNotepad={openNotepad}
+        onNewNotepad={() => void startNotepad()}
+        onRenameNotepad={renameNotepad}
+        onDeleteNotepad={removeNotepad}
+        onToggleDriveNotepad={session ? toggleDriveNotepad : undefined}
+        onNotepadsOpen={openNotepads}
         syncNote={
           <>
             <span className="pp-sync-dot" data-tone={sync.tone} aria-hidden="true" />
@@ -244,5 +418,43 @@ export function BoardChrome({
         ) : null}
       </div>
     </>
+  );
+}
+
+function AccountAvatar({
+  picture,
+  name,
+  small,
+}: {
+  picture: string;
+  name: string;
+  small?: boolean;
+}) {
+  const size = small ? 28 : 32;
+
+  if (picture) {
+    // One request, not a page of them: a remote avatar does not need next/image.
+    return (
+      <img
+        className="pp-account-avatar"
+        src={picture}
+        alt=""
+        width={size}
+        height={size}
+      />
+    );
+  }
+  return (
+    <span className="pp-account-avatar pp-account-avatar-fallback" aria-hidden="true">
+      {name.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+function CloudIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M7.5 18a4.5 4.5 0 0 1-.4-8.98A5.5 5.5 0 0 1 17.7 9.4 3.8 3.8 0 0 1 17 18H7.5Z" />
+    </svg>
   );
 }
