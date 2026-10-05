@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { pickTool } from "./helpers";
 
 /**
  * The chrome the user asked for: a style panel that is usable *before* drawing,
@@ -79,7 +80,7 @@ test.describe("style before drawing", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openBoard(page);
 
-    await page.locator('[data-tool="rectangle"]').click();
+    await pickTool(page, "rectangle");
 
     const panel = page.locator(".pp-properties-desktop");
     await expect(panel).toContainText("Style");
@@ -127,7 +128,7 @@ test.describe("style before drawing", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openBoard(page);
 
-    await page.locator('[data-tool="ellipse"]').click();
+    await pickTool(page, "ellipse");
     await page
       .locator(".pp-properties-desktop")
       .getByRole("button", { name: "Stroke #1971c2" })
@@ -135,7 +136,7 @@ test.describe("style before drawing", () => {
 
     await page.reload();
     await expect(page.locator("main[data-ready='true']")).toBeVisible();
-    await page.locator('[data-tool="ellipse"]').click();
+    await pickTool(page, "ellipse");
 
     await expect(
       page.locator(".pp-properties-desktop").getByRole("button", { name: "Stroke #1971c2" }),
@@ -240,7 +241,7 @@ test.describe("hamburger menu", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openBoard(page);
 
-    await page.locator('[data-tool="rectangle"]').click();
+    await pickTool(page, "rectangle");
     await drawBox(page);
     await expect(page.locator("main")).toHaveAttribute("data-elements", "1");
 
@@ -259,7 +260,7 @@ test.describe("hamburger menu", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openBoard(page);
 
-    await page.locator('[data-tool="rectangle"]').click();
+    await pickTool(page, "rectangle");
     await drawBox(page);
 
     const menu = await openMenu(page);
@@ -314,7 +315,7 @@ test.describe("style popover", () => {
   test("a tablet-width window toggles the right panel with the arrow", async ({ page }) => {
     await page.setViewportSize({ width: 900, height: 700 });
     await openBoard(page);
-    await page.locator('[data-tool="rectangle"]').click();
+    await pickTool(page, "rectangle");
 
     const panel = page.locator(".pp-properties-desktop");
     const toggle = page.getByTestId("toggle-panel");

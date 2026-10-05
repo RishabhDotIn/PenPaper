@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { pickTool } from "./helpers";
 
 /**
  * Live preview, measured in canvas pixels.
@@ -64,7 +65,7 @@ test.describe("live preview", () => {
     await page.goto("/b/local");
     await expect(page.locator("main[data-ready='true']")).toBeVisible();
 
-    await page.locator('[data-tool="rectangle"]').click();
+    await pickTool(page, "rectangle");
 
     const box = await page.getByRole("application").boundingBox();
     expect(box).not.toBeNull();

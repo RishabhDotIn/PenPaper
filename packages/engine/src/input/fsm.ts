@@ -6,6 +6,7 @@ export type InteractionState =
   | "resizing"
   | "rotating"
   | "drawing"
+  | "lasering"
   | "editingText"
   | "erasing";
 
@@ -17,13 +18,14 @@ export type InteractionState =
  * development and a no-op in production.
  */
 const TRANSITIONS: Record<InteractionState, readonly InteractionState[]> = {
-  idle: ["panning", "selecting", "dragging", "drawing", "editingText", "erasing"],
+  idle: ["panning", "selecting", "dragging", "drawing", "lasering", "editingText", "erasing"],
   panning: ["idle"],
   selecting: ["dragging", "idle"],
   dragging: ["resizing", "rotating", "idle"],
   resizing: ["dragging", "idle"],
   rotating: ["dragging", "idle"],
   drawing: ["idle"],
+  lasering: ["idle"],
   editingText: ["idle"],
   erasing: ["idle"],
 };

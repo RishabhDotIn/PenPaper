@@ -1,4 +1,11 @@
 import type { Element, Point } from "@penpaper/shared";
+import {
+  LASER_FADE_MS,
+  LASER_MAX_POINTS,
+  LASER_MIN_STEP,
+  laserClock,
+  type LaserPoint,
+} from "../laser";
 import { boundsIntersect, elementBounds } from "../math/bounds";
 import { panBy, sceneToScreen, screenToScene, zoomAt, type Camera } from "../math/camera";
 import { type History } from "../history/history";
@@ -85,6 +92,9 @@ export class InputController {
   /** Captured on pointer-down so every move is computed from the original. */
   private transformStart: { element: Element; handle: Handle } | null = null;
 
+  /** The live laser trail. Never added to the scene and never saved. */
+  private laserPoints: LaserPoint[] = [];
+
   private marqueeStart: Point | null = null;
   private marqueeRect: { x: number; y: number; width: number; height: number } | null = null;
   private marqueeAdditive = false;
@@ -121,6 +131,29 @@ export class InputController {
     return this.marqueeRect;
   }
 
+  /**
+   * Scene points of the laser gesture, oldest first.
+   *
+   * A fresh array on every change: the renderer compares by reference, and a
+   * mutated array would leave the last segment unpainted.
+   */
+  get laserTrail(): readonly LaserPoint[] {
+    return this.laserPoints;
+  }
+
+  /** Whether another frame is still needed for the trail to finish fading. */
+  laserActive(now = laserClock()): boolean {
+    const newest = this.laserPoints[this.laserPoints.length - 1];
+    return Boolean(newest && now - newest.t < LASER_FADE_MS + 80);
+  }
+
+  /** Drops the trail now, e.g. when the tool changes or the board is exported. */
+  clearLaser(): void {
+    if (this.laserPoints.length === 0) return;
+    this.laserPoints = [];
+    this.deps.onRender?.();
+  }
+
   getCamera(): Camera {
     return this.camera;
   }
@@ -131,6 +164,9 @@ export class InputController {
     this.transformStart = null;
     this.marqueeStart = null;
     this.marqueeRect = null;
+    // A trail belongs to the tool that made it. Leaving it fading over the
+    // next tool's work looks like a rendering bug.
+    this.laserPoints = [];
     this.tool = tool;
     this.fsm.reset();
   }
@@ -170,6 +206,10 @@ export class InputController {
   pointerDown(e: PointerInput): void {
     if (!this.palm.accept({ type: e.type, time: Date.now() })) return;
 
+    // A secondary click is a menu gesture everywhere else in the app. It used
+    // to fall through to the armed tool and leave a stray shape behind.
+    if (e.button !== undefined && e.button !== 0) return;
+
     const gesture = this.arbiter.pointerDown(e, Date.now());
     this.lastScreen = { x: e.x, y: e.y };
 
@@ -183,6 +223,21 @@ export class InputController {
     const point = screenToScene(this.camera, e);
     this.lastScene = point;
 
+    // A handle on the current selection outranks the armed tool.
+    //
+    // Drawing a shape leaves it selected while the shape tool is still armed,
+    // so the next press is usually on a corner: "make it bigger", not "draw
+    // another one". Resizing must not cost a trip to the selection tool.
+    if (
+      this.tool !== "select" &&
+      this.tool !== "hand" &&
+      this.tool !== "eraser" &&
+      this.tool !== "laser" &&
+      this.beginHandleDrag(point, e)
+    ) {
+      return;
+    }
+
     switch (this.tool) {
       case "hand":
         this.fsm.transition("panning");
@@ -190,6 +245,12 @@ export class InputController {
 
       case "select":
         this.beginSelect(point, e);
+        break;
+
+      case "laser":
+        this.laserPoints = [{ x: point.x, y: point.y, t: laserClock() }];
+        this.fsm.transition("lasering");
+        this.deps.onRender?.();
         break;
 
       case "eraser":
@@ -249,6 +310,10 @@ export class InputController {
         this.eraseAt(point);
         break;
 
+      case "lasering":
+        this.extendLaser(point);
+        break;
+
       default:
         if (this.tool === "select") this.deps.onRender?.();
         break;
@@ -293,6 +358,7 @@ export class InputController {
     this.pinchLast = null;
     this.marqueeStart = null;
     this.marqueeRect = null;
+    this.laserPoints = [];
     this.fsm.reset();
     this.deps.onRender?.();
   }
@@ -389,26 +455,7 @@ export class InputController {
     // A handle belonging to the current single selection wins over the element
     // underneath it: clicking the corner of a selected box must resize, not
     // start dragging the box.
-    const current = this.selectedElements;
-    const only = current.length === 1 ? current[0] : undefined;
-
-    if (only) {
-      const screenPoint = sceneToScreen(this.camera, point);
-      // Fingers get a 44 px target; a mouse pointer does not need one.
-      const radius = input.type === "mouse" ? 8 : 22;
-      const handle = handleAt(getHandles(only, this.camera), screenPoint, radius);
-
-      if (handle) {
-        // The state machine only reaches a transform through `dragging`, which
-        // also makes "pointer up during a resize" a single handled path.
-        this.deps.history?.begin(handle === "rotation" ? "rotate" : "resize");
-        this.fsm.transition("dragging");
-        this.fsm.transition(handle === "rotation" ? "rotating" : "resizing");
-        this.transformStart = { element: only, handle };
-        this.deps.onRender?.();
-        return;
-      }
-    }
+    if (this.beginHandleDrag(point, input)) return;
 
     const tolerance = DEFAULT_HIT_TOLERANCE / this.camera.zoom;
     const hit = this.deps.hitTest?.(point, tolerance) ?? null;
@@ -436,6 +483,32 @@ export class InputController {
     this.marqueeRect = null;
     this.fsm.transition("selecting");
     this.deps.onRender?.();
+  }
+
+  /**
+   * Starts a resize or rotation when the press landed on a handle.
+   *
+   * Shared by the selection tool and every other tool that can leave a shape
+   * selected: the state machine only reaches a transform through `dragging`,
+   * which also makes "pointer up during a resize" a single handled path.
+   */
+  private beginHandleDrag(point: Point, input: PointerInput): boolean {
+    const current = this.selectedElements;
+    const only = current.length === 1 ? current[0] : undefined;
+    if (!only) return false;
+
+    const screenPoint = sceneToScreen(this.camera, point);
+    // Fingers get a 44 px target; a mouse pointer does not need one.
+    const radius = input.type === "mouse" ? 8 : 22;
+    const handle = handleAt(getHandles(only, this.camera), screenPoint, radius);
+    if (!handle) return false;
+
+    this.deps.history?.begin(handle === "rotation" ? "rotate" : "resize");
+    this.fsm.transition("dragging");
+    this.fsm.transition(handle === "rotation" ? "rotating" : "resizing");
+    this.transformStart = { element: only, handle };
+    this.deps.onRender?.();
+    return true;
   }
 
   private commitMarquee(): void {
@@ -665,6 +738,18 @@ export class InputController {
     this.selected.delete(hit);
     this.deps.onSelectionChange?.(this.selection);
     this.deps.onSceneChange?.();
+    this.deps.onRender?.();
+  }
+
+  // ------------------------------------------------------------------ laser
+
+  private extendLaser(point: Point): void {
+    const last = this.laserPoints[this.laserPoints.length - 1];
+    if (last && Math.hypot(point.x - last.x, point.y - last.y) < LASER_MIN_STEP) return;
+
+    this.laserPoints = [...this.laserPoints, { x: point.x, y: point.y, t: laserClock() }].slice(
+      -LASER_MAX_POINTS,
+    );
     this.deps.onRender?.();
   }
 

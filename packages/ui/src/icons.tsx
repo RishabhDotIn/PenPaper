@@ -53,6 +53,17 @@ function paths(tool: Tool): ReactElement {
     case "ellipse":
       return <ellipse cx="12" cy="12" rx="8.5" ry="6.5" />;
 
+    case "triangle":
+      return <path d="M12 4.4 20 19.2H4z" />;
+
+    case "hexagon":
+      return <path d="M8.4 4.6h7.2L20 12l-4.4 7.4H8.4L4 12z" />;
+
+    case "star":
+      return (
+        <path d="M12 3.6 14.1 9.2 20 9.4 15.3 13.1 16.9 18.8 12 15.5 7.1 18.8 8.7 13.1 4 9.4 9.9 9.2z" />
+      );
+
     case "arrow":
       return (
         <>
@@ -89,7 +100,63 @@ function paths(tool: Tool): ReactElement {
           <path d="M9 21h11" />
         </>
       );
+
+    case "laser":
+      // A short trail ending in a bright dot: the gesture, not the ink.
+      return (
+        <>
+          <path d="M4.5 19.5c3-6.4 7-10.2 12.6-12.4" opacity="0.35" />
+          <path d="M7.6 17.9c2.2-4.1 5-6.5 8.6-7.7" opacity="0.6" />
+          <circle cx="18.6" cy="6.2" r="2.1" fill="currentColor" stroke="none" />
+        </>
+      );
   }
+}
+
+/** Menu affordance for a tool that opens a palette rather than acting once. */
+export function ChevronDownIcon(): ReactElement {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="m6 9.5 6 6 6-6" />
+    </svg>
+  );
+}
+
+/**
+ * The dock's geometry button.
+ *
+ * Three primitives — circle, square, triangle — rather than a drafting
+ * compass. A compass is the nicer logo on paper, but at 18 px its hinge and
+ * legs collapse into the letter A (or a stick figure), while the primitives
+ * stay readable and say exactly what the button opens: a palette of shapes.
+ * The compass remains the reference behind the doodle style, not the glyph.
+ */
+export function GeometryIcon(): ReactElement {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="16" cy="7.6" r="3.8" />
+      <rect x="4.2" y="12" width="7.6" height="7.6" rx="1.2" />
+      <path d="M16.4 11.6 20.8 19.6H12z" />
+    </svg>
+  );
 }
 
 /**

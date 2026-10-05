@@ -1,9 +1,11 @@
 import type { Element } from "@penpaper/shared";
 import type { Scene } from "../scene/scene";
+import { type LaserPoint } from "../laser";
 import { sceneToScreen, type Camera } from "../math/camera";
 import { boundsIntersect, elementBounds } from "../math/bounds";
 import { RoughCache } from "./rough-cache";
 import { drawElement } from "./shapes";
+import { drawLaserTrail } from "./laser-trail";
 import { drawMarquee, drawSelection } from "./selection-overlay";
 import { createStaticLayer, type StaticLayer } from "./static-layer";
 import { visibleBounds } from "./surface";
@@ -64,6 +66,8 @@ export class Renderer {
   /** Selection overlay state, owned by the input controller. */
   private selection: readonly Element[] = [];
   private marqueeRect: Rect | null = null;
+  /** Transient laser trail; never part of the scene. */
+  private laser: readonly LaserPoint[] = [];
 
   constructor(
     private readonly ctx: CanvasRenderingContext2D,
@@ -139,13 +143,15 @@ export class Renderer {
     this.gridDirty = true;
   }
 
-  /** The painted board as a PNG data URL, without selection or marquee. */
+  /** The painted board as a PNG data URL, without selection, marquee, or laser. */
   toDataUrl(): string {
     const selection = this.selection;
     const marquee = this.marqueeRect;
+    const laser = this.laser;
 
     this.selection = [];
     this.marqueeRect = null;
+    this.laser = [];
     this.dirty = true;
     this.render();
 
@@ -153,6 +159,7 @@ export class Renderer {
 
     this.selection = selection;
     this.marqueeRect = marquee;
+    this.laser = laser;
     this.dirty = true;
     return url;
   }
@@ -187,6 +194,18 @@ export class Renderer {
       return;
     }
     this.marqueeRect = rect ? { ...rect } : null;
+    this.dirty = true;
+  }
+
+  /**
+   * The laser trail, owned by the controller.
+   *
+   * Compared by reference: the controller replaces the array on every new
+   * sample, so a repeated call with the same array must not force a repaint.
+   */
+  setLaser(points: readonly LaserPoint[]): void {
+    if (points === this.laser) return;
+    this.laser = points;
     this.dirty = true;
   }
 
@@ -267,6 +286,9 @@ export class Renderer {
       });
       drawMarquee(ctx, from, to, theme);
     }
+
+    // Last, so the pointer's light sits on top of everything it points at.
+    drawLaserTrail(ctx, this.laser, this.camera, clock());
 
     this.dirty = false;
     this.frames = { drawn, culled, frameMs: clock() - started };

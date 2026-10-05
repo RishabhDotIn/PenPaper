@@ -14,9 +14,23 @@ async function expectBoard(page: Page): Promise<void> {
 }
 
 async function openNotepads(page: Page) {
-  await page.getByTestId("app-menu-button").click();
-  await page.getByTestId("open-notepads").click();
-  return page.getByTestId("app-menu-notepads");
+  const list = page.getByTestId("app-menu-notepads");
+
+  // Retried as a whole: creating a notepad navigates, and the chrome can be
+  // replaced a beat after `data-ready`. A menu opened on the outgoing tree is
+  // detached mid-animation, so "open it" has to survive the swap rather than
+  // click a node that is about to disappear.
+  await expect(async () => {
+    if (!(await list.isVisible())) {
+      await page.getByTestId("app-menu-button").click({ timeout: 3_000 });
+    }
+    if (!(await list.isVisible())) {
+      await page.getByTestId("open-notepads").click({ timeout: 3_000 });
+    }
+    await expect(list).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 20_000 });
+
+  return list;
 }
 
 test.describe("launcher", () => {
@@ -46,10 +60,17 @@ test.describe("launcher", () => {
     await page.getByTestId("app-menu-button").click();
     const menu = page.getByRole("dialog", { name: "Board menu" });
 
-    // Local-only by default: the identity block says so, and connecting is
-    // disabled because this build has no Google client id.
+    // Local-only is the default deployment, but a build can also carry a
+    // Google client id. Both are valid: without one the menu has to say so and
+    // refuse the click; with one the connect action must actually be live.
     await expect(menu.getByText("On this device")).toBeVisible();
-    await expect(menu.getByTestId("menu-connect-drive")).toBeDisabled();
+    const connect = menu.getByTestId("menu-connect-drive");
+    if (await menu.getByText("Connect to open from Drive").isVisible()) {
+      await expect(connect).toBeEnabled();
+    } else {
+      await expect(menu.getByText("Drive is not set up here")).toBeVisible();
+      await expect(connect).toBeDisabled();
+    }
 
     await menu.getByTestId("open-notepads").click();
     const list = menu.getByTestId("app-menu-notepads");

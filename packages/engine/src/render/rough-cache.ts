@@ -5,6 +5,7 @@ import { arrowDrawable } from "./shapes/arrow";
 import { diamondDrawable } from "./shapes/diamond";
 import { ellipseDrawable } from "./shapes/ellipse";
 import { lineDrawable } from "./shapes/line";
+import { polygonDrawable } from "./shapes/polygon";
 import { rectangleDrawable } from "./shapes/rectangle";
 
 export type Drawable = ReturnType<ReturnType<typeof rough.generator>["rectangle"]>;
@@ -67,6 +68,10 @@ function generate(gen: Generator, el: Element): Drawable {
       return ellipseDrawable(gen, el, options);
     case "diamond":
       return diamondDrawable(gen, el, options);
+    case "triangle":
+    case "hexagon":
+    case "star":
+      return polygonDrawable(gen, el.type, el, options);
     case "line":
       return lineDrawable(gen, el, options);
     case "arrow":

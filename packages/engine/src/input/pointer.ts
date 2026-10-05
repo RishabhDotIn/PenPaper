@@ -17,6 +17,13 @@ export interface PointerInput {
   y: number;
   /** 0–1. Mouse and touch report 0.5 unless the device says otherwise. */
   pressure: number;
+  /**
+   * The DOM button that started the press: 0 primary, 2 secondary.
+   *
+   * Optional so existing callers and tests keep working; when it is present,
+   * a secondary press must never start ink.
+   */
+  button?: number;
   shift: boolean;
   alt: boolean;
   ctrl: boolean;

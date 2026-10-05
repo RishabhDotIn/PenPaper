@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { pickTool } from "./helpers";
 
 /** Reads one board's saved camera, retrying while the loader finishes writing. */
 async function readCamera(page: Page, boardId: string) {
@@ -30,7 +31,7 @@ test.describe("local persistence", () => {
     await page.goto("/b/persist-shape");
     await expect(page.locator("main[data-ready='true']")).toBeVisible();
 
-    await page.locator("[data-tool='rectangle']").click();
+    await pickTool(page, "rectangle");
 
     const canvas = page.getByRole("application");
     const box = await canvas.boundingBox();
@@ -64,7 +65,7 @@ test.describe("local persistence", () => {
 
     await page.goto("/b/persist-first");
     await expect(page.locator("main[data-ready='true']")).toBeVisible();
-    await page.locator("[data-tool='rectangle']").click();
+    await pickTool(page, "rectangle");
 
     const box = await page.getByRole("application").boundingBox();
     expect(box).not.toBeNull();

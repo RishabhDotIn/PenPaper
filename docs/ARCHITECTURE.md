@@ -49,9 +49,13 @@ properties, text editor). Everything inside the canvas is painted by the engine:
    `drawElement` runs.
 4. **Overlays** — selection handles and marquee in screen space, after the
    camera transform is popped.
+5. **Laser** — the transient pointer trail, painted last so it always sits on
+   top, and omitted from `toDataUrl()` so an export never contains it.
 
 `render()` returns immediately when no dirty flag was set. Pointer moves mark
-the frame dirty; an idle board does no work.
+the frame dirty; an idle board does no work. While a laser trail is fading there
+are no further pointer events, so `BoardScreen` keeps requesting frames and
+marks the renderer dirty until `laserActive()` says the trail is gone.
 
 Rough.js is used as a *geometry generator*, never as a canvas renderer. The
 engine caches drawables by type, size, seed, and style. Position and rotation
@@ -88,11 +92,26 @@ array splice, which is another property the collaborative model needs.
 
 ```
 idle → drawing | dragging | resizing | rotating | selecting | erasing | panning
+     | lasering
 ```
 
 Pinch and multi-pointer gestures are arbitrated before the FSM sees them. A
 pinch that begins as a stray stroke cancels that stroke. Palm rejection ignores
 synthetic mouse events near a recently seen pen, and pen events win over touch.
+
+Two rules keep the FSM from fighting the person using it:
+
+- A selection handle outranks an armed creation tool. Drawing leaves the new
+  shape selected while the shape tool is still armed, so grabbing a corner is
+  "make it bigger", not "draw another one". Switching to the selection tool is
+  never required to adjust what was just drawn.
+- A non-primary button never reaches the tool. Right-clicking a handle adjusts
+  the shape; right-clicking empty canvas does not leave stray ink.
+
+The laser is a pointer, not a tool in the scene: its samples live on the
+controller in a capped ring (320 points, 2 px minimum step, 850 ms fade), never
+in `Scene`, never in history, never in a saved board. Changing tools clears it
+so a trail can never bleed into ink.
 
 History is transaction-based, not command-per-event:
 
@@ -137,7 +156,12 @@ state:
 
 - **History** — undo and redo in a two-button island, bottom-left on desktop
   and top-right on small screens, sized to match the menu island.
-- **Toolbar** — the active tool, mirrored from `BoardScreen`.
+- **Toolbar** — the active tool, mirrored from `BoardScreen`. Six geometry
+  shapes (rectangle, diamond, ellipse, triangle, hexagon, star) live behind one
+  dock button and open in a two-column palette; the palette is portal-rendered
+  and positioned in viewport space, beside the vertical desktop dock and above
+  the horizontal phone dock, because the dock clips overflow on narrow screens.
+  Adding another polygon costs a vertex table entry, not a dock slot.
 - **Style panel** — `PropertiesPanel` in a right rail from 768 px up; a small
   chevron tab on the rail's left edge collapses it to the screen edge and back.
   Below that, the palette button in the top-left island drops a `StylePopover`:

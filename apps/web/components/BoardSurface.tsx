@@ -33,6 +33,7 @@ function toPointerInput(event: PointerEvent, rect: DOMRect): PointerInput {
     // A mouse reports 0 while no button is down; the engine wants a usable
     // constant so a stroke has consistent width.
     pressure: event.pressure > 0 ? event.pressure : 0.5,
+    button: event.button,
     shift: event.shiftKey,
     alt: event.altKey,
     ctrl: event.ctrlKey,

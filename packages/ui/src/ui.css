@@ -151,6 +151,131 @@
   height: 18px;
 }
 
+/* The dock's one geometry button. A tiny caret is the whole affordance: it
+   says "more shapes live here" without spending another icon slot. */
+.pp-tool-shapes {
+  position: relative;
+}
+
+.pp-tool-caret {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  display: grid;
+  place-items: center;
+  width: 9px;
+  height: 9px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.pp-tool-caret svg {
+  width: 9px;
+  height: 9px;
+}
+
+/* Portal-positioned, because the dock clips its own overflow below 1024 px. */
+.pp-shape-menu {
+  position: fixed;
+  z-index: 45;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  min-width: 250px;
+  padding: 5px;
+  border-radius: 12px;
+
+  background: var(--glass-thick);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: var(--glass-shadow);
+
+  /* Grows out of the button it belongs to, rather than appearing at it. */
+  animation: pp-shape-in 170ms var(--ease-spring);
+}
+
+@keyframes pp-shape-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.pp-shape-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+
+  color: var(--on-surface);
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 120ms var(--ease-out),
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.pp-shape-option svg {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+}
+
+.pp-shape-option:active {
+  transform: scale(0.98);
+}
+
+@media (hover: hover) {
+  .pp-shape-option:hover {
+    background: var(--surface-low);
+  }
+}
+
+.pp-shape-option[aria-pressed="true"] {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 11%, transparent);
+}
+
+.pp-shape-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pp-shape-key {
+  color: var(--on-surface-muted);
+  font-size: 11px;
+}
+
+@media (pointer: coarse) {
+  .pp-shape-option {
+    min-height: 44px;
+  }
+}
+
+/* A phone in portrait has room for two columns; a very narrow one does not.
+   One column keeps every label readable instead of truncating to "Recta…". */
+@media (max-width: 300px) {
+  .pp-shape-menu {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+}
+
 /* ------------------------------------------------------------------ menu */
 
 /* The left island: hamburger, plus the style trigger on touch widths. One
@@ -1354,6 +1479,10 @@
     animation: none;
   }
 
+  .pp-shape-menu {
+    animation: none;
+  }
+
   .pp-menu-view {
     animation: none;
   }
@@ -1368,6 +1497,7 @@
   .pp-menu,
   .pp-panel,
   .pp-popover,
+  .pp-shape-menu,
   .pp-panel-toggle {
     background: var(--island-bg);
   }
@@ -1380,6 +1510,7 @@
   .pp-menu,
   .pp-panel,
   .pp-popover,
+  .pp-shape-menu,
   .pp-panel-toggle {
     background: var(--island-bg);
     -webkit-backdrop-filter: none;
@@ -1394,6 +1525,7 @@
   .pp-menu,
   .pp-panel,
   .pp-popover,
+  .pp-shape-menu,
   .pp-panel-toggle {
     box-shadow:
       0 0 0 1px var(--on-surface),

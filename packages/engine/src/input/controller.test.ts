@@ -524,3 +524,120 @@ describe("InputController text", () => {
     expect(deps.scene.size).toBe(1);
   });
 });
+
+describe("adjusting a freshly drawn shape", () => {
+  /** Draws a 100×100 rectangle and leaves it selected, tool still armed. */
+  function drawRectangle() {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setTool("rectangle");
+    c.pointerDown({ ...basePointer, x: 100, y: 100 });
+    c.pointerMove({ ...basePointer, x: 200, y: 200 });
+    c.pointerUp({ ...basePointer, x: 200, y: 200 });
+    return { deps, c, element: deps.scene.ordered()[0]! };
+  }
+
+  it("resizes from a corner handle without switching tools", () => {
+    const { deps, c, element } = drawRectangle();
+    expect(c.selection).toEqual([element.id]);
+
+    // With camera identity, scene and screen coordinates coincide: the
+    // south-east handle of a 100..200 box is at (200, 200).
+    c.pointerDown({ ...basePointer, x: 200, y: 200 });
+    c.pointerMove({ ...basePointer, x: 260, y: 250 });
+    c.pointerUp({ ...basePointer, x: 260, y: 250 });
+
+    expect(deps.scene.size).toBe(1);
+    expect(deps.scene.get(element.id)).toMatchObject({ x: 100, y: 100, width: 160, height: 150 });
+    expect(c.activeTool).toBe("rectangle");
+  });
+
+  it("rotates from the rotation handle without drawing a second shape", () => {
+    const { deps, c, element } = drawRectangle();
+
+    // 22 px above the top edge, at the horizontal centre.
+    c.pointerDown({ ...basePointer, x: 150, y: 78 });
+    c.pointerMove({ ...basePointer, x: 230, y: 150 });
+    c.pointerUp({ ...basePointer, x: 230, y: 150 });
+
+    expect(deps.scene.size).toBe(1);
+    expect(deps.scene.get(element.id)?.angle).not.toBe(0);
+  });
+
+  it("still draws a new shape when the press is away from the handles", () => {
+    const { deps, c } = drawRectangle();
+
+    c.pointerDown({ ...basePointer, x: 400, y: 400 });
+    c.pointerMove({ ...basePointer, x: 500, y: 500 });
+    c.pointerUp({ ...basePointer, x: 500, y: 500 });
+
+    expect(deps.scene.size).toBe(2);
+  });
+
+  it("ignores a secondary click so it cannot leave stray ink", () => {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setTool("rectangle");
+
+    c.pointerDown({ ...basePointer, x: 50, y: 50, button: 2 });
+    c.pointerMove({ ...basePointer, x: 120, y: 120 });
+    c.pointerUp({ ...basePointer, x: 120, y: 120 });
+
+    expect(deps.scene.size).toBe(0);
+  });
+});
+
+describe("the laser pointer", () => {
+  it("leaves a trail without adding anything to the scene", () => {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setTool("laser");
+
+    c.pointerDown({ ...basePointer, x: 10, y: 10 });
+    c.pointerMove({ ...basePointer, x: 60, y: 40 });
+    c.pointerMove({ ...basePointer, x: 120, y: 90 });
+    c.pointerUp({ ...basePointer, x: 120, y: 90 });
+
+    expect(deps.scene.size).toBe(0);
+    expect(deps.scene.revision).toBe(0);
+    expect(c.laserTrail.length).toBeGreaterThanOrEqual(3);
+    expect(c.laserActive()).toBe(true);
+  });
+
+  it("drops samples closer than the minimum step", () => {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setTool("laser");
+
+    c.pointerDown({ ...basePointer, x: 10, y: 10 });
+    for (let i = 0; i < 10; i += 1) c.pointerMove({ ...basePointer, x: 10.5, y: 10.5 });
+    c.pointerUp({ ...basePointer, x: 10.5, y: 10.5 });
+
+    expect(c.laserTrail).toHaveLength(1);
+  });
+
+  it("clears the trail when the tool changes, so it cannot bleed into ink", () => {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setTool("laser");
+    c.pointerDown({ ...basePointer, x: 10, y: 10 });
+    c.pointerMove({ ...basePointer, x: 100, y: 100 });
+    c.pointerUp({ ...basePointer, x: 100, y: 100 });
+
+    c.setTool("freedraw");
+
+    expect(c.laserTrail).toHaveLength(0);
+    expect(c.laserActive()).toBe(false);
+  });
+
+  it("stops needing frames once the trail has faded", () => {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setTool("laser");
+    c.pointerDown({ ...basePointer, x: 10, y: 10 });
+    c.pointerUp({ ...basePointer, x: 10, y: 10 });
+
+    // Far past the fade window; no timestamp arithmetic can keep it alive.
+    expect(c.laserActive(Number.MAX_SAFE_INTEGER)).toBe(false);
+  });
+});

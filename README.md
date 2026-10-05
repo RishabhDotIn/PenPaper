@@ -26,14 +26,22 @@ deleted, or synced without leaving the canvas.
 - **Infinite canvas** with scroll-to-pan, pinch-to-zoom, and a cached grid.
 - **Freehand drawing** with pressure-sensitive strokes (Perfect Freehand), palm
   rejection, and coalesced pointer samples.
-- **Shapes** — rectangle, ellipse, diamond, line, and arrow — drawn with
-  Rough.js in the Excalidraw visual language (hachure, cross-hatch, solid).
+- **Shapes behind one dock button** — rectangle, ellipse, diamond, triangle,
+  hexagon, and star share a single geometry button that opens a pocket palette,
+  so adding shapes never pushes the pen off a phone screen; line and arrow stay
+  one tap away. Drawn with Rough.js in the Excalidraw visual language (hachure,
+  cross-hatch, solid).
 - **Text** with a real browser textarea overlay, IME composition, wrapped
   layout, and no iOS focus zoom.
 - **Selection and transforms** — click, shift-click, marquee, move, resize from
   eight handles, and rotate, including on rotated elements. A finished pen
   stroke stays unselected, so fresh writing never grows resize handles and the
-  style panel keeps pointing at the next stroke.
+  style panel keeps pointing at the next stroke. Handles also work while a shape
+  tool is still armed, and a right-click adjusts instead of drawing, so tweaking
+  the shape you just made never costs a trip to the selection tool.
+- **Laser pointer** (`L`) — a GoodNotes-style fading trail for pointing at the
+  board. It is light, not ink: it never enters the scene, the undo history,
+  a saved board, or a PNG export.
 - **A style box that works before you draw.** Pick the pen, a shape, or the text
   tool and the panel edits the *next* element: stroke and background colour,
   fill, stroke width, dash, roughness, opacity, font, and arrowheads. Pick
@@ -133,11 +141,11 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 
 | Metric | Result | Gate |
 | --- | --- | --- |
-| Engine unit tests | 171 passing | all green |
+| Engine unit tests | 182 passing | all green |
 | Web unit tests | 67 passing | all green |
-| Browser tests | 40 passing | all green |
+| Browser tests | 45 passing | all green |
 | Median renderer frame body, 1,000 mixed shapes | 7.4–9.3 ms production | ≤ 16 ms |
-| Board route transfer, gzip | 179.3 KiB JS + CSS | ≤ 220 kB |
+| Board route transfer, gzip | 182.0 KiB JS + CSS | ≤ 220 kB |
 
 The frame measurement is the renderer's own body (cull, layout, paint commands),
 not `requestAnimationFrame` deltas, which are clamped to the display refresh rate

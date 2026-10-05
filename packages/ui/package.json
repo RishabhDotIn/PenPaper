@@ -17,13 +17,16 @@
   },
   "peerDependencies": {
     "@penpaper/engine": "workspace:*",
-    "react": ">=19"
+    "react": ">=19",
+    "react-dom": ">=19"
   },
   "devDependencies": {
     "@penpaper/engine": "workspace:*",
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "react": "19.3.1",
+    "react-dom": "19.3.1",
     "typescript": "7.0.2"
   }
 }

@@ -50,6 +50,9 @@ const CREATION_TOOLS: ReadonlySet<Tool> = new Set([
   "rectangle",
   "ellipse",
   "diamond",
+  "triangle",
+  "hexagon",
+  "star",
   "arrow",
   "line",
   "text",
@@ -129,7 +132,14 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     if (frameRef.current !== 0) return;
     frameRef.current = requestAnimationFrame(() => {
       frameRef.current = 0;
+      const controller = controllerRef.current;
+      // The laser fades on its own: its frames have no input event to mark the
+      // renderer dirty, and an early-returning frame would leave the trail
+      // frozen on screen at its last opacity.
+      const fadingLaser = controller?.laserActive() ?? false;
+      if (fadingLaser) rendererRef.current?.markDirty();
       rendererRef.current?.render();
+      if (fadingLaser) scheduleRender();
     });
   }, []);
 
@@ -210,6 +220,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     if (!controller || !renderer) return;
     renderer.setSelection(controller.selectedElements);
     renderer.setMarquee(controller.marquee);
+    renderer.setLaser(controller.laserTrail);
   }, []);
 
   const refreshSelection = useCallback(() => {
