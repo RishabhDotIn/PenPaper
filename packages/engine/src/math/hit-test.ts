@@ -1,5 +1,6 @@
 import type { Bounds, Element, Point } from "@penpaper/shared";
 import type { Scene } from "../scene/scene";
+import { distanceToPolygon, pointInPolygon, polygonPoints } from "./polygon";
 import type { Quadtree } from "./quadtree";
 
 /**
@@ -85,6 +86,18 @@ export function hitsElement(el: Element, point: Point, tolerance = DEFAULT_TOLER
         ? Math.abs(local.x) / innerRx + Math.abs(local.y) / innerRy
         : Number.POSITIVE_INFINITY;
       return inner > 1;
+    }
+
+    case "triangle":
+    case "hexagon":
+    case "star": {
+      const points = polygonPoints(el.type, el.width, el.height);
+      // Hit testing works in the element's unrotated box, whose origin is the
+      // top-left; the polygon table is already in those coordinates.
+      const p = { x: local.x + halfW, y: local.y + halfH };
+      if (hasFill(el) && pointInPolygon(points, p)) return true;
+      // Unfilled: only the outline is clickable, so the hole in a star is not.
+      return distanceToPolygon(points, p) <= pad;
     }
 
     case "line":

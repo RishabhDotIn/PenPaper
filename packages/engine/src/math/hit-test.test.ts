@@ -43,4 +43,33 @@ describe("hitTest", () => {
     expect(hitTest(scene, tree, { x: 50, y: 50 })).not.toBeNull();
     expect(hitTest(scene, tree, { x: 50, y: 90 })).toBeNull();
   });
+
+  it("hit-tests a polygon by its outline, not by its bounding box", () => {
+    const scene = new Scene();
+    scene.add(createElement("triangle", { x: 0, y: 0, width: 100, height: 100 }, "V"));
+    const tree = sceneTree(scene);
+
+    // Inside the box, outside the triangle: the top-left corner is empty.
+    expect(hitTest(scene, tree, { x: 6, y: 6 })).toBeNull();
+    // Near the apex, on the stroke.
+    expect(hitTest(scene, tree, { x: 50, y: 3 })).not.toBeNull();
+  });
+
+  it("makes the interior of a filled polygon clickable", () => {
+    for (const type of ["triangle", "hexagon", "star"] as const) {
+      const scene = new Scene();
+      const element = createElement(type, { x: 0, y: 0, width: 100, height: 100 }, "V");
+      scene.add({ ...element, backgroundColor: "#ffec99" });
+      expect(hitTest(scene, sceneTree(scene), { x: 50, y: 52 })).not.toBeNull();
+    }
+  });
+
+  it("misses the hole in an unfilled star but hits its points", () => {
+    const scene = new Scene();
+    scene.add(createElement("star", { x: 0, y: 0, width: 100, height: 100 }, "V"));
+    const tree = sceneTree(scene);
+
+    expect(hitTest(scene, tree, { x: 50, y: 50 })).toBeNull();
+    expect(hitTest(scene, tree, { x: 50, y: 3 })).not.toBeNull();
+  });
 });

@@ -57,6 +57,15 @@ export {
 } from "./render/renderer";
 export { RoughCache } from "./render/rough-cache";
 export { drawElement } from "./render/shapes";
+export { drawLaserTrail } from "./render/laser-trail";
+export {
+  LASER_FADE_MS,
+  LASER_MAX_POINTS,
+  LASER_MIN_STEP,
+  laserClock,
+  laserStrength,
+  type LaserPoint,
+} from "./laser";
 export { drawMarquee, drawSelection, type SelectionOverlayOptions } from "./render/selection-overlay";
 export { createStaticLayer, type StaticLayer } from "./render/static-layer";
 export { darkTheme, lightTheme, type Theme } from "./render/theme";
