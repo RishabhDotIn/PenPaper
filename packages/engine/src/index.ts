@@ -58,6 +58,19 @@ export {
 export { RoughCache } from "./render/rough-cache";
 export { drawElement } from "./render/shapes";
 export { drawLaserTrail } from "./render/laser-trail";
+export { drawEraseGhosts, drawEraserOverlay } from "./render/erase-effect";
+export {
+  EMPTY_ERASER_FRAME,
+  ERASER_CURSOR_RADIUS,
+  ERASER_GHOST_MS,
+  ERASER_TRAIL_FADE_MS,
+  ERASER_TRAIL_MAX_POINTS,
+  ERASER_TRAIL_MIN_STEP,
+  eraserGhostProgress,
+  eraserTrailStrength,
+  type EraserFrame,
+  type EraserGhost,
+} from "./eraser";
 export {
   LASER_FADE_MS,
   LASER_MAX_POINTS,

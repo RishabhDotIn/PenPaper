@@ -249,4 +249,31 @@ describe("Renderer", () => {
     renderer.render();
     expect(ctx.calls.filter((call) => call === "arc")).toHaveLength(9);
   });
+
+  it("exports a PNG without the eraser ring or ghosts", () => {
+    const scene = new Scene();
+    const ctx = fakeCtx();
+    const renderer = new Renderer(ctx, scene, { x: 0, y: 0, zoom: 1 }, {
+      width: 800,
+      height: 600,
+      grid: false,
+    });
+
+    renderer.setEraser({
+      cursor: { x: 50, y: 50 },
+      trail: [],
+      ghosts: [],
+    });
+    renderer.render();
+    expect(ctx.calls.filter((call) => call === "arc")).toHaveLength(1);
+
+    ctx.reset();
+    expect(renderer.toDataUrl()).toBe("data:image/png;base64,stub");
+    expect(ctx.calls.filter((call) => call === "arc")).toHaveLength(0);
+
+    // The live ring comes back for the next on-screen frame.
+    ctx.reset();
+    renderer.render();
+    expect(ctx.calls.filter((call) => call === "arc")).toHaveLength(1);
+  });
 });

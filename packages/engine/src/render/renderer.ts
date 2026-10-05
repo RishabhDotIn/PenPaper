@@ -1,10 +1,12 @@
 import type { Element } from "@penpaper/shared";
 import type { Scene } from "../scene/scene";
+import { EMPTY_ERASER_FRAME, type EraserFrame } from "../eraser";
 import { type LaserPoint } from "../laser";
 import { sceneToScreen, type Camera } from "../math/camera";
 import { boundsIntersect, elementBounds } from "../math/bounds";
 import { RoughCache } from "./rough-cache";
 import { drawElement } from "./shapes";
+import { drawEraseGhosts, drawEraserOverlay } from "./erase-effect";
 import { drawLaserTrail } from "./laser-trail";
 import { drawMarquee, drawSelection } from "./selection-overlay";
 import { createStaticLayer, type StaticLayer } from "./static-layer";
@@ -68,6 +70,8 @@ export class Renderer {
   private marqueeRect: Rect | null = null;
   /** Transient laser trail; never part of the scene. */
   private laser: readonly LaserPoint[] = [];
+  /** Eraser ring, trail, and departing elements; also never part of the scene. */
+  private eraser: EraserFrame = EMPTY_ERASER_FRAME;
 
   constructor(
     private readonly ctx: CanvasRenderingContext2D,
@@ -143,15 +147,17 @@ export class Renderer {
     this.gridDirty = true;
   }
 
-  /** The painted board as a PNG data URL, without selection, marquee, or laser. */
+  /** The painted board as a PNG data URL, without selection, marquee, laser, or eraser. */
   toDataUrl(): string {
     const selection = this.selection;
     const marquee = this.marqueeRect;
     const laser = this.laser;
+    const eraser = this.eraser;
 
     this.selection = [];
     this.marqueeRect = null;
     this.laser = [];
+    this.eraser = EMPTY_ERASER_FRAME;
     this.dirty = true;
     this.render();
 
@@ -160,6 +166,7 @@ export class Renderer {
     this.selection = selection;
     this.marqueeRect = marquee;
     this.laser = laser;
+    this.eraser = eraser;
     this.dirty = true;
     return url;
   }
@@ -206,6 +213,13 @@ export class Renderer {
   setLaser(points: readonly LaserPoint[]): void {
     if (points === this.laser) return;
     this.laser = points;
+    this.dirty = true;
+  }
+
+  /** The eraser's transient frame, compared by reference like the laser. */
+  setEraser(frame: EraserFrame): void {
+    if (frame === this.eraser) return;
+    this.eraser = frame;
     this.dirty = true;
   }
 
@@ -273,6 +287,9 @@ export class Renderer {
       drawn += 1;
     }
 
+    // Erased elements shrink away while the rest of the scene keeps painting.
+    drawEraseGhosts(ctx, this.eraser.ghosts, this.cache, theme, clock());
+
     ctx.restore();
 
     // Overlays live in screen space, so they are painted after the camera
@@ -289,6 +306,7 @@ export class Renderer {
 
     // Last, so the pointer's light sits on top of everything it points at.
     drawLaserTrail(ctx, this.laser, this.camera, clock());
+    drawEraserOverlay(ctx, this.eraser, this.camera, clock());
 
     this.dirty = false;
     this.frames = { drawn, culled, frameMs: clock() - started };

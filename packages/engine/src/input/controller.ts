@@ -1,5 +1,14 @@
 import type { Element, Point } from "@penpaper/shared";
 import {
+  EMPTY_ERASER_FRAME,
+  ERASER_GHOST_MS,
+  ERASER_TRAIL_FADE_MS,
+  ERASER_TRAIL_MAX_POINTS,
+  ERASER_TRAIL_MIN_STEP,
+  type EraserFrame,
+  type EraserGhost,
+} from "../eraser";
+import {
   LASER_FADE_MS,
   LASER_MAX_POINTS,
   LASER_MIN_STEP,
@@ -95,6 +104,13 @@ export class InputController {
   /** The live laser trail. Never added to the scene and never saved. */
   private laserPoints: LaserPoint[] = [];
 
+  /** The eraser's cursor, fading trail, and departing elements. */
+  private eraserCursor: Point | null = null;
+  private eraserTrail: LaserPoint[] = [];
+  private eraseGhosts: EraserGhost[] = [];
+  /** Cached frame object: the renderer compares it by reference. */
+  private eraserFrame: EraserFrame = EMPTY_ERASER_FRAME;
+
   private marqueeStart: Point | null = null;
   private marqueeRect: { x: number; y: number; width: number; height: number } | null = null;
   private marqueeAdditive = false;
@@ -154,6 +170,59 @@ export class InputController {
     this.deps.onRender?.();
   }
 
+  /** The eraser's transient visuals, cached so the renderer can compare refs. */
+  get eraser(): EraserFrame {
+    return this.eraserFrame;
+  }
+
+  /**
+   * Whether another frame is still needed.
+   *
+   * Laser and eraser trails fade on their own; nothing else is moving when the
+   * pointer is still, so the board can go back to doing no work.
+   */
+  effectsActive(now = laserClock()): boolean {
+    const trail = this.eraserTrail[this.eraserTrail.length - 1];
+    const ghost = this.eraseGhosts[this.eraseGhosts.length - 1];
+    return (
+      this.laserActive(now) ||
+      Boolean(trail && now - trail.t < ERASER_TRAIL_FADE_MS + 80) ||
+      Boolean(ghost && now - ghost.t < ERASER_GHOST_MS + 80)
+    );
+  }
+
+  /** Hides the ring when the pointer leaves the canvas. The trail keeps fading. */
+  pointerLeave(): void {
+    if (!this.eraserCursor) return;
+    this.eraserCursor = null;
+    this.syncEraser();
+    this.deps.onRender?.();
+  }
+
+  /** Drops every eraser effect now, e.g. when switching tools. */
+  clearEraser(): void {
+    if (
+      !this.eraserCursor &&
+      this.eraserTrail.length === 0 &&
+      this.eraseGhosts.length === 0
+    ) {
+      return;
+    }
+    this.eraserCursor = null;
+    this.eraserTrail = [];
+    this.eraseGhosts = [];
+    this.syncEraser();
+    this.deps.onRender?.();
+  }
+
+  private syncEraser(): void {
+    this.eraserFrame = {
+      cursor: this.eraserCursor,
+      trail: this.eraserTrail,
+      ghosts: this.eraseGhosts,
+    };
+  }
+
   getCamera(): Camera {
     return this.camera;
   }
@@ -167,6 +236,7 @@ export class InputController {
     // A trail belongs to the tool that made it. Leaving it fading over the
     // next tool's work looks like a rendering bug.
     this.laserPoints = [];
+    this.clearEraser();
     this.tool = tool;
     this.fsm.reset();
   }
@@ -256,7 +326,7 @@ export class InputController {
       case "eraser":
         this.deps.history?.begin("erase");
         this.fsm.transition("erasing");
-        this.eraseAt(point);
+        this.beginErase(point);
         break;
 
       case "text":
@@ -280,8 +350,13 @@ export class InputController {
     }
 
     const point = screenToScene(this.camera, e);
+    const previousScene = this.lastScene;
     const sceneDelta = { x: point.x - this.lastScene.x, y: point.y - this.lastScene.y };
     this.lastScene = point;
+
+    // The eraser ring follows the pointer even before a press, like Excalidraw's
+    // tool cursor. It is screen-space feedback, not scene content.
+    if (this.tool === "eraser") this.trackEraser(point);
 
     switch (this.fsm.state) {
       case "panning":
@@ -307,7 +382,7 @@ export class InputController {
         break;
 
       case "erasing":
-        this.eraseAt(point);
+        this.eraseAlong(previousScene, point);
         break;
 
       case "lasering":
@@ -359,6 +434,7 @@ export class InputController {
     this.marqueeStart = null;
     this.marqueeRect = null;
     this.laserPoints = [];
+    this.clearEraser();
     this.fsm.reset();
     this.deps.onRender?.();
   }
@@ -729,13 +805,70 @@ export class InputController {
 
   // ----------------------------------------------------------------- eraser
 
+  /** Starts a press: the ring and trail appear where the finger landed. */
+  private beginErase(point: Point): void {
+    this.eraserCursor = point;
+    this.eraserTrail = [{ x: point.x, y: point.y, t: laserClock() }];
+    this.syncEraser();
+    this.eraseAt(point);
+  }
+
+  /** Keeps the ring under the pointer and records the trail behind it. */
+  private trackEraser(point: Point): void {
+    this.eraserCursor = point;
+
+    // Hovering shows the ring, but only a press leaves a trail: a smear that
+    // follows a moving cursor would suggest the board is being erased.
+    if (this.fsm.state === "erasing") {
+      const last = this.eraserTrail[this.eraserTrail.length - 1];
+      if (!last || Math.hypot(point.x - last.x, point.y - last.y) >= ERASER_TRAIL_MIN_STEP) {
+        this.eraserTrail = [
+          ...this.eraserTrail,
+          { x: point.x, y: point.y, t: laserClock() },
+        ].slice(-ERASER_TRAIL_MAX_POINTS);
+      }
+    }
+
+    this.syncEraser();
+    this.deps.onRender?.();
+  }
+
+  /**
+   * Erases everything along the pointer's last movement, not just its sample.
+   *
+   * A fast flick only produces a handful of pointer events; testing those
+   * points alone leaves a dotted line of surviving shapes between them. The
+   * path is sampled at half the hit tolerance so nothing slips through.
+   */
+  private eraseAlong(from: Point, to: Point): void {
+    const distance = Math.hypot(to.x - from.x, to.y - from.y);
+    const step = Math.max(1, DEFAULT_HIT_TOLERANCE / this.camera.zoom / 2);
+    const samples = Math.min(64, Math.ceil(distance / step));
+    if (samples <= 1) {
+      this.eraseAt(to);
+      return;
+    }
+
+    for (let index = 1; index <= samples; index += 1) {
+      const t = index / samples;
+      this.eraseAt({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t });
+    }
+  }
+
   private eraseAt(point: Point): void {
     const tolerance = DEFAULT_HIT_TOLERANCE / this.camera.zoom;
     const hit = this.deps.hitTest?.(point, tolerance) ?? null;
     if (!hit) return;
 
+    const element = this.scene.get(hit);
+    if (!element || element.isDeleted) return;
+
+    // Snapshot before the tombstone: the ghost paints the element it was, not
+    // a deleted record the renderer would skip.
+    this.eraseGhosts = [...this.eraseGhosts, { element: { ...element }, t: laserClock() }].slice(-24);
     this.scene.remove(hit);
     this.selected.delete(hit);
+    this.syncEraser();
     this.deps.onSelectionChange?.(this.selection);
     this.deps.onSceneChange?.();
     this.deps.onRender?.();

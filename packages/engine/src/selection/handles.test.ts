@@ -67,6 +67,73 @@ describe("getHandles", () => {
       expect(Number.isFinite(p.y)).toBe(true);
     }
   });
+
+  // The dots are meant to sit on the shape. A corner of a diamond's bounding
+  // box is empty paper, so the generic eight-handle grid is wrong for anything
+  // whose silhouette is not a rectangle.
+  it("gives a diamond and an ellipse four cardinal handles", () => {
+    for (const type of ["diamond", "ellipse"] as const) {
+      const el = createElement(type, { x: 0, y: 0, width: 100, height: 100 }, "V");
+      const handles = getHandles(el, CAMERA);
+
+      expect(handles.map((h) => h.handle)).toEqual(["n", "e", "s", "w", "rotation"]);
+      expect(point(handles, "n")).toEqual({ x: 50, y: 0 });
+      expect(point(handles, "e")).toEqual({ x: 100, y: 50 });
+      expect(point(handles, "s")).toEqual({ x: 50, y: 100 });
+      expect(point(handles, "w")).toEqual({ x: 0, y: 50 });
+    }
+  });
+
+  it("puts a triangle's handles on its three corners", () => {
+    const el = createElement("triangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    const handles = getHandles(el, CAMERA);
+
+    expect(handles).toHaveLength(4);
+    expect(point(handles, "n")).toEqual({ x: 50, y: 0 });
+    expect(point(handles, "se")).toEqual({ x: 100, y: 100 });
+    expect(point(handles, "sw")).toEqual({ x: 0, y: 100 });
+  });
+
+  it("follows a hexagon's six corners", () => {
+    const el = createElement("hexagon", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    const handles = getHandles(el, CAMERA);
+
+    expect(handles).toHaveLength(7);
+    expect(point(handles, "nw")).toEqual({ x: 25, y: 0 });
+    expect(point(handles, "ne")).toEqual({ x: 75, y: 0 });
+    expect(point(handles, "e")).toEqual({ x: 100, y: 50 });
+    expect(point(handles, "se")).toEqual({ x: 75, y: 100 });
+    expect(point(handles, "sw")).toEqual({ x: 25, y: 100 });
+    expect(point(handles, "w")).toEqual({ x: 0, y: 50 });
+  });
+
+  it("shows only a star's five outer tips", () => {
+    const el = createElement("star", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    const handles = getHandles(el, CAMERA);
+
+    // Ten corners would be a ring of dots; the inner ones are not the
+    // silhouette and are awkward targets on a phone.
+    expect(handles).toHaveLength(6);
+    expect(point(handles, "n")).toEqual({ x: 50, y: 0 });
+
+    const tips = handles.filter((h) => h.handle !== "rotation");
+    expect(new Set(tips.map((h) => `${h.handle}:${h.point.x}:${h.point.y}`)).size).toBe(5);
+  });
+
+  it("still rings a rectangle with all eight box handles", () => {
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    expect(getHandles(el, CAMERA).map((h) => h.handle)).toEqual([
+      "nw",
+      "n",
+      "ne",
+      "e",
+      "se",
+      "s",
+      "sw",
+      "w",
+      "rotation",
+    ]);
+  });
 });
 
 describe("handleAt", () => {

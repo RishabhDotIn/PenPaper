@@ -7,6 +7,20 @@ import { lightTheme } from "./theme";
 
 const CAMERA = { x: 0, y: 0, zoom: 1 };
 
+/**
+ * `lineTo` calls in the silhouette path.
+ *
+ * A single-element selection also strokes a rotation stem, which starts with
+ * a second `moveTo` and contributes one more segment. Slicing between the two
+ * `moveTo`s keeps these assertions about the outline only.
+ */
+function outlineSegments(records: ReadonlyArray<{ name: string }>): number {
+  const starts = records.flatMap((record, index) => (record.name === "moveTo" ? [index] : []));
+  const [from, to] = starts;
+  if (from === undefined || to === undefined) return 0;
+  return records.slice(from, to).filter((record) => record.name === "lineTo").length;
+}
+
 describe("drawSelection", () => {
   it("draws one circle per handle for a single element", () => {
     const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
@@ -49,6 +63,52 @@ describe("drawSelection", () => {
 
     const firstMove = ctx.records.find((record) => record.name === "moveTo");
     expect(firstMove?.args).toEqual([-4, -4]);
+  });
+
+  it("traces an ellipse instead of boxing it", () => {
+    const el = createElement("ellipse", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    const ctx = fakeCtx();
+
+    drawSelection(ctx, [el], CAMERA, lightTheme);
+
+    const ellipse = ctx.records.find((record) => record.name === "ellipse");
+    expect(ellipse).toBeDefined();
+    // Centre, radii, and rotation: 50 + 4 px of breathing room on each axis.
+    expect(ellipse?.args).toEqual([50, 50, 54, 54, 0, 0, Math.PI * 2]);
+    expect(ctx.calls).not.toContain("strokeRect");
+  });
+
+  it("traces a diamond's four corners rather than its bounding box", () => {
+    const el = createElement("diamond", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    const ctx = fakeCtx();
+
+    drawSelection(ctx, [el], CAMERA, lightTheme);
+
+    const firstMove = ctx.records.find((record) => record.name === "moveTo");
+    // Top point of the diamond: (50, 0) pushed out by the 4 px padding. A box
+    // outline would start at (-4, -4).
+    expect(firstMove?.args).toEqual([50, -4]);
+    // Count only the silhouette, not the rotation stem's extra segment.
+    expect(outlineSegments(ctx.records)).toBe(3);
+    expect(ctx.calls).toContain("closePath");
+    expect(ctx.calls).not.toContain("strokeRect");
+  });
+
+  it("outlines polygons with one edge per vertex", () => {
+    for (const [type, edges] of [
+      ["triangle", 3],
+      ["hexagon", 6],
+      ["star", 10],
+    ] as const) {
+      const el = createElement(type, { x: 0, y: 0, width: 100, height: 100 }, "V");
+      const ctx = fakeCtx();
+
+      drawSelection(ctx, [el], CAMERA, lightTheme);
+
+      expect(outlineSegments(ctx.records)).toBe(edges - 1);
+      expect(ctx.calls).toContain("closePath");
+      expect(ctx.calls).not.toContain("strokeRect");
+    }
   });
 
   it("draws a group box without individual handles", () => {

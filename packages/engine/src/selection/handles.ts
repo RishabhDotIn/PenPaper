@@ -1,4 +1,5 @@
 import type { Element, Point } from "@penpaper/shared";
+import { polygonPoints } from "../math/polygon";
 import { sceneToScreen, type Camera } from "../math/camera";
 
 export type Handle =
@@ -18,7 +19,22 @@ export interface HandlePoint {
   point: Point;
 }
 
-const EDGE_HANDLES: ReadonlyArray<readonly [Handle, number, number]> = [
+/** One handle anchor, in fractions of the element box from its centre. */
+interface HandleAnchor {
+  handle: Handle;
+  fx: number;
+  fy: number;
+}
+
+/**
+ * The default grid: corners and edge midpoints.
+ *
+ * Rectangles, lines, arrows, text, and freehand strokes share it because their
+ * own geometry *is* a box. Ellipses, diamonds, and polygons do not: a dot at
+ * the corner of a diamond's bounding box sits in empty space, which reads as a
+ * handle that belongs to another shape.
+ */
+const BOX_ANCHORS: ReadonlyArray<readonly [Handle, number, number]> = [
   ["nw", -0.5, -0.5],
   ["n", 0, -0.5],
   ["ne", 0.5, -0.5],
@@ -28,6 +44,58 @@ const EDGE_HANDLES: ReadonlyArray<readonly [Handle, number, number]> = [
   ["sw", -0.5, 0.5],
   ["w", -0.5, 0],
 ];
+
+/** Cardinal points, which are exactly the diamond's and ellipse's extremes. */
+const CARDINAL_ANCHORS: ReadonlyArray<readonly [Handle, number, number]> = [
+  ["n", 0, -0.5],
+  ["e", 0.5, 0],
+  ["s", 0, 0.5],
+  ["w", -0.5, 0],
+];
+
+function direction(fx: number, fy: number): Handle {
+  const x = Math.abs(fx) < 1e-9 ? 0 : fx < 0 ? -1 : 1;
+  const y = Math.abs(fy) < 1e-9 ? 0 : fy < 0 ? -1 : 1;
+
+  if (y < 0) return x < 0 ? "nw" : x > 0 ? "ne" : "n";
+  if (y > 0) return x < 0 ? "sw" : x > 0 ? "se" : "s";
+  return x < 0 ? "w" : "e";
+}
+
+function anchor(fx: number, fy: number): HandleAnchor {
+  return { handle: direction(fx, fy), fx, fy };
+}
+
+function polygonAnchors(type: "triangle" | "hexagon" | "star"): HandleAnchor[] {
+  return polygonPoints(type, 1, 1)
+    // A star has ten corners; the five inner ones would crowd the handles into
+    // a ring of dots. The outer tips are the silhouette and the useful targets.
+    .filter((_, index) => type !== "star" || index % 2 === 0)
+    .map((point) => anchor(point.x - 0.5, point.y - 0.5));
+}
+
+/**
+ * Handles sit on the shape, not on a rectangle drawn around it.
+ *
+ * Every anchor is still turned into one of the nine resize directions, so the
+ * transform maths does not need a second code path: dragging a hexagon's top
+ * edge resizes its height, exactly like dragging a rectangle's top edge.
+ */
+function anchorsFor(el: Element): HandleAnchor[] {
+  switch (el.type) {
+    case "diamond":
+    case "ellipse":
+      return CARDINAL_ANCHORS.map(([handle, fx, fy]) => ({ handle, fx, fy }));
+
+    case "triangle":
+    case "hexagon":
+    case "star":
+      return polygonAnchors(el.type);
+
+    default:
+      return BOX_ANCHORS.map(([handle, fx, fy]) => ({ handle, fx, fy }));
+  }
+}
 
 /** Screen-space distance from the top edge to the rotation handle. */
 export const ROTATION_HANDLE_OFFSET = 22;
@@ -47,7 +115,7 @@ export function getHandles(el: Element, camera: Camera, _hitSize = 8): HandlePoi
 
   const handles: HandlePoint[] = [];
 
-  for (const [handle, fx, fy] of EDGE_HANDLES) {
+  for (const { handle, fx, fy } of anchorsFor(el)) {
     const lx = fx * el.width;
     const ly = fy * el.height;
     const world = { x: cx + lx * cos - ly * sin, y: cy + lx * sin + ly * cos };

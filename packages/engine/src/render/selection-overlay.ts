@@ -1,6 +1,7 @@
-import type { Element } from "@penpaper/shared";
+import type { Element, Point } from "@penpaper/shared";
 import { elementBounds } from "../math/bounds";
 import { sceneToScreen, type Camera } from "../math/camera";
+import { polygonPoints } from "../math/polygon";
 import { getHandles } from "../selection/handles";
 import type { Theme } from "./theme";
 
@@ -19,6 +20,40 @@ export interface SelectionOverlayOptions {
  * thing the user just drew. Excalidraw leaves the same visual breathing room.
  */
 export const SELECTION_PADDING = 4;
+
+/**
+ * The silhouette an element should be outlined with.
+ *
+ * A bounding box is right for box-shaped things. For an ellipse or a diamond it
+ * draws a rectangle around empty corners; tracing the shape itself makes the
+ * selection feel attached to what was drawn.
+ */
+type Silhouette =
+  | { kind: "box" }
+  | { kind: "ellipse" }
+  | { kind: "polygon"; points: readonly Point[] };
+
+const DIAMOND_OUTLINE: readonly Point[] = [
+  { x: 0.5, y: 0 },
+  { x: 1, y: 0.5 },
+  { x: 0.5, y: 1 },
+  { x: 0, y: 0.5 },
+];
+
+function silhouetteFor(el: Element): Silhouette {
+  switch (el.type) {
+    case "ellipse":
+      return { kind: "ellipse" };
+    case "diamond":
+      return { kind: "polygon", points: DIAMOND_OUTLINE };
+    case "triangle":
+    case "hexagon":
+    case "star":
+      return { kind: "polygon", points: polygonPoints(el.type, 1, 1) };
+    default:
+      return { kind: "box" };
+  }
+}
 
 /**
  * Drawn in screen space, after the camera transform has been popped.
@@ -60,41 +95,59 @@ function drawSingle(
   handleSize: number,
 ): void {
   const handles = getHandles(el, camera, handleSize);
-  const byName = new Map(handles.map((entry) => [entry.handle, entry.point] as const));
 
-  // The outline is drawn on a padded box rather than through the handles, so a
-  // thin element is still visible while it is selected.
   const centre = sceneToScreen(camera, { x: el.x + el.width / 2, y: el.y + el.height / 2 });
   const halfW = (el.width / 2) * camera.zoom + SELECTION_PADDING;
   const halfH = (el.height / 2) * camera.zoom + SELECTION_PADDING;
   const cos = Math.cos(el.angle);
   const sin = Math.sin(el.angle);
 
-  const corners = ([
-    [-1, -1],
-    [1, -1],
-    [1, 1],
-    [-1, 1],
-  ] as const).map(([sx, sy]) => ({
-    x: centre.x + sx * halfW * cos - sy * halfH * sin,
-    y: centre.y + sx * halfW * sin + sy * halfH * cos,
-  }));
+  /** A point in the element's normalized box (-0.5…0.5) to screen space. */
+  const project = (nx: number, ny: number): Point => ({
+    x: centre.x + nx * 2 * halfW * cos - ny * 2 * halfH * sin,
+    y: centre.y + nx * 2 * halfW * sin + ny * 2 * halfH * cos,
+  });
 
-  // The outline follows the element's rotation; an axis-aligned box around a
-  // rotated rectangle puts its edges in the wrong place and makes the corner
-  // handles look detached from it.
-  const first = corners[0];
-  if (first) {
+  const silhouette = silhouetteFor(el);
+
+  if (silhouette.kind === "ellipse") {
     ctx.beginPath();
-    ctx.moveTo(first.x, first.y);
-    for (const corner of corners.slice(1)) ctx.lineTo(corner.x, corner.y);
-    ctx.closePath();
+    ctx.ellipse(centre.x, centre.y, halfW, halfH, el.angle, 0, Math.PI * 2);
     ctx.stroke();
+  } else {
+    const points =
+      silhouette.kind === "polygon"
+        ? silhouette.points.map((point) => project(point.x - 0.5, point.y - 0.5))
+        : (
+            [
+              [-1, -1],
+              [1, -1],
+              [1, 1],
+              [-1, 1],
+            ] as const
+          ).map(([sx, sy]) => ({
+            x: centre.x + sx * halfW * cos - sy * halfH * sin,
+            y: centre.y + sx * halfW * sin + sy * halfH * cos,
+          }));
+
+    // The outline follows the element's rotation; an axis-aligned box around a
+    // rotated rectangle puts its edges in the wrong place and makes the corner
+    // handles look detached from it.
+    const first = points[0];
+    if (first) {
+      ctx.beginPath();
+      ctx.moveTo(first.x, first.y);
+      for (const point of points.slice(1)) ctx.lineTo(point.x, point.y);
+      ctx.closePath();
+      ctx.stroke();
+    }
   }
 
-  const top = byName.get("n");
-  const rotation = byName.get("rotation");
-  if (top && rotation) {
+  // The rotation stem starts at the top of the element's own box, not at a
+  // handle: a hexagon has two top handles and neither is the centre line.
+  const top = project(0, -0.5);
+  const rotation = handles.find((entry) => entry.handle === "rotation")?.point;
+  if (rotation) {
     ctx.save();
     ctx.globalAlpha = 0.5;
     ctx.beginPath();

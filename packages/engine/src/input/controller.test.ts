@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Scene } from "../scene/scene";
 import { createElement } from "../scene/factory";
 import { History } from "../history/history";
+import { laserClock } from "../laser";
 import { InputController } from "./controller";
 import type { PointerInput } from "./pointer";
 
@@ -153,6 +154,87 @@ describe("InputController", () => {
     c.pointerDown({ ...basePointer, x: 50, y: 50 });
 
     expect(deps.scene.ordered()).toHaveLength(0);
+  });
+
+  it("keeps an untombstoned copy to animate away", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const c = new InputController({ ...deps, hitTest: () => el.id });
+    c.setTool("eraser");
+    c.pointerDown({ ...basePointer, x: 50, y: 50 });
+
+    // The scene record is a tombstone; the ghost must be the element as it
+    // was, or the renderer would skip it and nothing would animate.
+    expect(deps.scene.get(el.id)?.isDeleted).toBe(true);
+    expect(c.eraser.ghosts).toHaveLength(1);
+    expect(c.eraser.ghosts[0]?.element).toMatchObject({ id: el.id, isDeleted: false });
+  });
+
+  it("erases everything along a fast drag, not only the sampled points", () => {
+    const deps = makeDeps();
+    const first = { ...createElement("rectangle", { x: 20, y: 20, width: 40, height: 40 }, "V"), id: "first" };
+    const second = { ...createElement("rectangle", { x: 240, y: 20, width: 40, height: 40 }, "V"), id: "second" };
+    deps.scene.add(first);
+    deps.scene.add(second);
+
+    // Only these two targets are hittable, so finding the second one proves the
+    // controller walked the segment between pointer events.
+    const hitTest = (point: { x: number; y: number }) => {
+      if (Math.hypot(point.x - 40, point.y - 40) <= 20) return "first";
+      if (Math.hypot(point.x - 260, point.y - 40) <= 20) return "second";
+      return null;
+    };
+
+    const c = new InputController({ ...deps, hitTest });
+    c.setTool("eraser");
+    c.pointerDown({ ...basePointer, x: 40, y: 40 });
+    c.pointerMove({ ...basePointer, x: 260, y: 40 });
+    c.pointerUp({ ...basePointer, x: 260, y: 40 });
+
+    expect(deps.scene.ordered()).toHaveLength(0);
+    expect(c.eraser.ghosts).toHaveLength(2);
+  });
+
+  it("asks for frames only while an effect is still fading", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const c = new InputController({ ...deps, hitTest: () => el.id });
+    c.setTool("eraser");
+    c.pointerDown({ ...basePointer, x: 50, y: 50 });
+
+    expect(c.effectsActive()).toBe(true);
+    // Well past both the trail and the ghost windows.
+    expect(c.effectsActive(laserClock() + 2_000)).toBe(false);
+  });
+
+  it("hides the ring when the pointer leaves but lets the trail finish", () => {
+    const deps = makeDeps();
+    const el = createElement("rectangle", { x: 0, y: 0, width: 100, height: 100 }, "V");
+    deps.scene.add(el);
+
+    const c = new InputController({ ...deps, hitTest: () => el.id });
+    c.setTool("eraser");
+    c.pointerDown({ ...basePointer, x: 50, y: 50 });
+    c.pointerLeave();
+
+    expect(c.eraser.cursor).toBeNull();
+    expect(c.eraser.trail.length).toBeGreaterThan(0);
+  });
+
+  it("shows the ring while hovering without smearing a trail", () => {
+    const deps = makeDeps();
+    const c = new InputController(deps);
+    c.setTool("eraser");
+
+    c.pointerMove({ ...basePointer, x: 40, y: 50 });
+    c.pointerMove({ ...basePointer, x: 90, y: 60 });
+
+    expect(c.eraser.cursor).toEqual({ x: 90, y: 60 });
+    expect(c.eraser.trail).toHaveLength(0);
   });
 
   it("selects and moves an element with the select tool", () => {
