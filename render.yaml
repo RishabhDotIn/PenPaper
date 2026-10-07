@@ -14,6 +14,16 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # Neon Postgres. Create a free project at neon.tech and paste its pooled
+      # connection string here; leaving it empty keeps accounts and sharing off
+      # and the app local-only.
+      - key: DATABASE_URL
+        sync: false
+      # At least 32 random bytes, e.g. `openssl rand -hex 32`. Signs the
+      # five-minute room token that Socket.IO verifies. Rotating it invalidates
+      # in-flight room tokens; sessions live in Postgres and keep working.
+      - key: PENPAPER_SECRET
+        sync: false
       # Public OAuth client id. Set the value in the Render dashboard; an empty
       # value simply keeps the app local-only. Never add a client secret here.
       - key: NEXT_PUBLIC_GOOGLE_CLIENT_ID

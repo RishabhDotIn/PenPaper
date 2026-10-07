@@ -1,0 +1,23 @@
+{
+  "path": "/api/collab",
+  "client": {
+    "syncRequest": "sync-request",
+    "update": "update",
+    "cursor": "cursor",
+    "selection": "selection"
+  },
+  "server": {
+    "ready": "ready",
+    "sync": "sync",
+    "update": "update",
+    "presence": "presence",
+    "fatal": "fatal"
+  },
+  "limits": {
+    "maxUpdateBytes": 8388608,
+    "maxPeers": 32,
+    "idleRoomMs": 30000,
+    "cursorIntervalMs": 40,
+    "tokenRefreshMs": 240000
+  }
+}

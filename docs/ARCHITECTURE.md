@@ -1,18 +1,25 @@
 # PenPaper architecture
 
-This document describes Phase 1 as built. It is deliberately specific about the
-seams that later phases (accounts, cloud boards, real-time collaboration) will
-lean on, and about the decisions that are easy to undo accidentally.
+This document describes PenPaper as built: the offline canvas, optional Google
+Drive sync, accounts, share links, and live rooms. It is deliberately specific
+about the seams that later phases will lean on, and about the decisions that are
+easy to undo accidentally.
 
 ## Package layout
 
 ```
 apps/web              Next.js App Router shell
   app/                the launcher at `/`: last notepad, or a one-time chooser
-  app/b/[id]          one board per route
-  components/         Launcher, BoardLoader, BoardScreen, BoardChrome, BoardSurface, TextEditorOverlay
+  app/b/[id]          one board per route; `?share=<token>` carries an invitation
+  app/s/[token]       a share link, resolved server-side then redirected to the board
+  app/api/            accounts, boards, share links, room token (Node runtime)
+  server/             one Node process: Next + Socket.IO (`main.mjs`, `collab.mjs`)
+  components/         Launcher, BoardLoader, BoardScreen, BoardChrome, BoardSurface,
+                      TextEditorOverlay, AccountPanel, ShareDialog, PeerCursors
   lib/storage.ts      IndexedDB scene + notepad index stores (idb)
   lib/library.ts      notepad list model, demo seed, relative times
+  lib/collab/         account store, API client, durable board sync, Yjs session
+  lib/server/         Postgres schema, auth, roles, share tokens, room JWT
   lib/drive/          optional Google Drive sync (auth, REST, merge, reconcile)
   lib/preferences.ts  validated theme/paper/layout/style/auto-sync defaults (localStorage)
   store/board-store.ts  Zustand metadata (status, element count, savedAt)
@@ -73,8 +80,8 @@ first shapes on every frame.
 `Element` in `packages/shared/src/elements.ts` is one flat interface, not a
 discriminated union:
 
-- Field-level collaboration maps one-to-one onto a `Y.Map`; two people editing
-  colour and position of the same shape never clobber each other.
+- Collaboration maps one-to-one onto a `Y.Map<Element>` keyed by id; the flat
+  shape means the next step (field-level merge) does not need a new serializer.
 - Persistence is JSON in one column, with no per-type serializer.
 - Renderers read fields in the hot path without narrowing.
 
@@ -195,13 +202,15 @@ state:
   `InputController.setStyle()` holds that default; the panel receives a
   zero-sized preview element built from it, so the same form code serves both
   cases without a second component.
-- **`AppMenu`** — the hamburger popover: the account and Drive state, the
-  notepad list (open, rename, delete, and per-notepad sync), undo/redo, theme,
-  paper colour, layout, PNG export, and reset. Appearance actions keep the
-  popover open so themes can be compared; one-shot and destructive actions
-  close it. The list is a second view inside the same popover, not a route:
-  switching notepads is a one-tap move mid-drawing, and renaming or deleting one
-  never costs a navigation away from the canvas.
+- **`AppMenu`** — the hamburger popover: the PenPaper account, the Google Drive
+  state, the live-room state with Share/read-only, the notepad list (open,
+  rename, delete, and per-notepad sync), undo/redo, theme, paper colour, layout,
+  PNG export, and reset. Appearance actions keep the popover open so themes can
+  be compared; one-shot and destructive actions close it. The list is a second
+  view inside the same popover, not a route: switching notepads is a one-tap
+  move mid-drawing, and renaming or deleting one never costs a navigation away
+  from the canvas. A viewer sees the same menu without rename, delete, Drive,
+  or share controls.
 
 The island and its popover are siblings, not nested: a `backdrop-filter`
 ancestor creates a backdrop root, and a descendant blur would then sample that
@@ -239,17 +248,34 @@ between `#1e1e1e` and `#e3e3e8` only while it is still a default ink.
 
 `/` is a hand-off, not a catalogue. `Launcher` reads `lastBoardId` from device
 preferences and `router.replace`s to `/b/<id>` when that notepad still exists
-locally, and — with an account connected — when Drive still has it. A stale id
-is cleared rather than followed, so a deleted notepad never opens as a blank
-board under a dead id. Only a device that has never opened one, or whose last
-one is gone, sees the chooser: recent notepads as rows on paper, a New notepad
-button, and an optional Connect Drive button.
+locally, and — when signed in or connected to Drive — when the account or Drive
+still has it. A stale id is cleared rather than followed, so a deleted notepad
+never opens as a blank board under a dead id. Only a device that has never
+opened one, or whose last one is gone, sees the chooser: recent notepads as rows
+on paper, a New notepad button, and optional Connect Drive / account actions.
+
+A share link is a short address, not a second app. `/s/<token>` resolves the
+token on the server and redirects to `/b/<id>?share=<token>`. `BoardLoader`
+resolves that invitation before mounting the canvas, so a viewer never gets a
+writable first frame; an expired or revoked link gets a card with a fresh-link
+hint. The API surface is:
+
+| Route | Purpose |
+| --- | --- |
+| `POST /api/auth/sign-up`, `sign-in`, `sign-out` | email/password session |
+| `GET /api/auth/me` | who is here, and whether accounts/rooms are configured |
+| `GET/POST /api/boards` | the account's library; register a device notepad |
+| `GET/PUT/DELETE /api/boards/<id>` | one snapshot, its role, its title |
+| `POST /api/boards/<id>/share` | mint (or replace) a live link for a role |
+| `POST /api/boards/<id>/collab` | five-minute room token |
+| `GET /api/share/<token>` | resolve a link for programmatic use |
 
 There is no separate management route. The hamburger's notepad list carries
 open, rename (inline input), delete (one arming tap, then Delete), and — with
 auto-sync off — a per-notepad Sync / Remove from Drive action. The root menu
-holds the All notepads / Choose switch. Rename writes the device card and queues
-the Drive file rename on the next upload; delete trashes the file and clears
+holds the All notepads / Choose switch and the Share / live-room row. Rename
+writes the device card, queues the Drive file rename, and sends the new title to
+the account; delete trashes the Drive file, removes the account copy, and clears
 `lastBoardId` when it was the remembered one.
 
 `lastBoardId` is a device preference (`rememberBoard` on board mount,
@@ -261,14 +287,22 @@ notepads; that is correct, not a conflict.
 
 `BoardLoader` reads IndexedDB **before** mounting the canvas. `undefined` means
 "still reading" and renders a skeleton; `null` means "nothing saved" and mounts
-an empty board. Mounting first and pouring elements in later is the blank-flash
-bug local-first apps are prone to.
+an empty board (or, for a share link, waits for the server invitation first).
+Mounting first and pouring elements in later is the blank-flash bug local-first
+apps are prone to.
 
 The device snapshot is:
 
 ```ts
 { version: 1, elements: Element[], camera: Camera, savedAt: number }
 ```
+
+A share link is the one case that waits for the network: a viewer must not get a
+writable first frame, and an expired link should say so instead of mounting a
+board that cannot save. The loader pulls the server snapshot, merges it into the
+device copy by `updatedAt`, writes the result back to IndexedDB, and passes the
+resolved role to `BoardScreen`. A regular board does the same merge after the
+first paint, so the canvas is never blocked on the account either.
 
 `deserializeScene` validates and repairs. A malformed element is dropped, a
 missing field gets the current factory default, and an unsupported version
@@ -313,12 +347,14 @@ Drive is a second copy, never the source of truth. The board is loaded from
 IndexedDB before any network call; reconciliation runs after the first paint and
 silently does nothing when no account is connected.
 
-**No server.** The browser uses Google Identity Services' token model: a popup
-returns an access token valid for about an hour. The token lives in
-`sessionStorage`, so it dies with the tab; the account name and picture live in
-`localStorage` so the board menu can show who is connected and reconnect in one
-tap. There is no client secret, no refresh token, no backend, and no database.
-The only configuration is the public `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+**No server for Drive.** The browser uses Google Identity Services' token
+model: a popup returns an access token valid for about an hour. The token lives
+in `sessionStorage`, so it dies with the tab; the account name and picture live
+in `localStorage` so the board menu can show who is connected and reconnect in
+one tap. There is no client secret, no refresh token, and no Drive traffic
+through PenPaper's server; the account database described above is separate and
+optional. The only Drive configuration is the public
+`NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
 **Scope.** `drive.file` plus `openid email profile`. `drive.file` is
 non-sensitive: the app sees the files it created, not the rest of the user's
@@ -379,6 +415,160 @@ device. Hiding the tab flushes the queue, because a backgrounded tab is often
 closed before its timer fires. A Drive file deleted while offline is remembered
 in `localStorage` and trashed on the next connected sync, so a later pull cannot
 resurrect a notepad the person deleted.
+
+## Accounts, sharing, and live collaboration
+
+Everything below is optional and layered on top of the same local-first board.
+The canvas never waits for any of it: `BoardLoader` hydrates IndexedDB first,
+`BoardScreen` mounts, and the account and room work happen after the first
+paint. With no `DATABASE_URL` the API reports `configured: false` and none of
+this code runs.
+
+### One Node process, three jobs
+
+`server/main.mjs` creates one HTTP server, hands requests to Next, and attaches
+Socket.IO to the same server for `/api/collab`. `pnpm dev` and `pnpm start` both
+run it (`--prod` sets `NODE_ENV` before Next is imported, because Windows cannot
+spell `NODE_ENV=production` in a script). Render's free plan gives 750
+instance-hours to one service; a second realtime service would halve that, so
+the room service is not separate.
+
+The room process never touches Postgres. The Next routes mint a five-minute
+HS256 JWT (`PENPAPER_SECRET`, `jose`) carrying board, user, role, name, and
+colour; the socket verifies the signature and expiry and trusts nothing else
+from the client. Authorization therefore lives in one place — the route that
+already knows the session or the share token — while the hot path stays a
+signature check.
+
+### Accounts
+
+Hand-rolled rather than a framework: two tables, no OAuth dependency, no
+external auth service.
+
+- Passwords are hashed with `scrypt` and a per-user salt; comparison is
+  constant-time.
+- Sessions are random 32-byte tokens stored only as SHA-256 hashes, in an
+  `httpOnly`, `SameSite=Lax`, `Secure`-in-production cookie with a 30-day
+  expiry. A stolen database row does not become a usable cookie.
+- `currentUser()` reads the cookie, hashes it, and joins the session to the
+  user. Every protected route calls it; components never see a token.
+- Rate limits are per-IP and advisory, keyed on `x-forwarded-for` when Render
+  supplies it.
+
+A Neon project suspends when idle. The connection pool is deliberately small
+(one process, 0.1 CPU) and the schema creates itself with `create table if not
+exists` on first use, so there is no migration step and no build-time database.
+`/api/auth/me` treats a database error as "signed out" instead of failing every
+page that asks.
+
+### Boards, roles, and share links
+
+A board row stores owner, title, a JSON snapshot, and a monotonically increasing
+`seq`. The role is always computed server-side:
+
+| Caller | Role |
+| --- | --- |
+| The owner's session | `owner` |
+| A valid share token for the board | the token's role (`editor` or `viewer`) |
+| Anyone else | none — 404, not 403, so ids are not enumerable |
+
+The same rule runs on REST and on socket-token minting. `PUT /api/boards/<id>`
+returns 403 for a viewer token and 404 for an anonymous caller; the live room
+refuses a viewer's `update` frames too, so a patched client cannot write.
+
+Share links are live, not one-shot. There is one active link per board and role;
+creating another replaces the previous one, which is how "revoke" works. The raw
+token is generated with 32 random bytes, returned once, and stored as a SHA-256
+hash. `/s/<token>` resolves it server-side and redirects to
+`/b/<id>?share=<token>`; the token then travels on every read, write, and room
+token request, so a reload keeps working and the resolver is not on the drawing
+path. An expired link, an unknown token, and a database outage get distinct
+cards rather than a generic 500.
+
+Opening a board with an owner's session registers it with `ensureServerBoard`
+using the id already in the address bar, so every link minted before sign-in
+stays valid. A 409 there means another account already uses that id; the device
+keeps drawing locally but does not join that board's room.
+
+### Durable sync and the live room are separate
+
+Two paths, on purpose:
+
+- **Durable:** a 1.5 s debounced `PUT` writes the whole merged scene (live
+  elements only) to Postgres, plus a flush on `pagehide` and on tab hide. A
+  whole snapshot, not a delta, because Postgres already holds the materialised
+  scene and every reader can consume it without replay.
+- **Live:** Yjs updates over Socket.IO while people are present, throttled to
+  one push per 100 ms during a stroke. The engine keeps the in-progress element
+  in the scene, so peers watch it grow rather than waiting for pointer-up.
+
+The durable path is the source of truth across devices; the room is a fast
+cache that disappears when it empties. Rooms seed from the first client's full
+local document, keep a 30 s grace period after the last peer leaves (so a
+refresh or a tunnel does not lose the document), cap at 32 peers and 500 rooms,
+and drop an idle room after 30 s.
+
+### The Yjs model
+
+One `Y.Map<Element>` named `elements`, keyed by element id. That is the smallest
+unit that makes the merge promise honest: two people drawing different shapes
+never conflict, and two people dragging the same shape resolve to the copy with
+the newer `updatedAt`. The element model is already flat and field-mergeable, so
+a future field-level CRDT would replace the map values, not the transport.
+
+Two documents are kept in the client session:
+
+- `local` is what this tab believes (the tab's Yjs replica).
+- `remote` mirrors what the room has sent.
+
+The initial exchange is `sync-request` → `sync`, then both sides send the
+difference between state vectors with `Y.encodeStateAsUpdate(doc, stateVector)`.
+That is the standard two-way sync and it is what makes reconnecting after a
+tunnel carry everything the room missed, not just the last stroke.
+
+**Reconciliation after applying a remote update.** Yjs resolves concurrent
+writes by client id, not by `updatedAt`. A shape drawn offline during a tunnel
+could therefore lose to an older room copy simply because the other client wrote
+later in CRDT time. After applying a remote update, the session compares each
+incoming element with the scene's copy and, where the local copy is newer,
+writes it back into the map and flushes the correction. The room converges on
+the newer drawing rather than on the newer client.
+
+Deletions travel as tombstones. The scene keeps `isDeleted` elements, and the
+live push sends `scene.snapshot()` (tombstones included) so a peer that was
+offline when a shape was erased does not bring it back on reconnect. The
+durable snapshot still contains only live elements.
+
+`BoardScreen` adopts remote elements one at a time with `scene.restore()`, never
+by replacing the scene: the user may be mid-stroke. Restoring the incoming
+object — already stamped — avoids re-stamping it and starting an update
+ping-pong. Selection and pointer position are presence, not drawing, and are
+emitted separately and throttled.
+
+### Presence
+
+The socket roster includes every peer, including this tab. The session filters
+its own socket id using `you` from the ready message, so a pointer is never drawn
+twice. Peers are rendered as screen-space cursors over the canvas, positioned
+from the camera on every animation frame rather than mirrored into React state,
+so panning moves other people's pointers without re-rendering the chrome. The
+menu's head count is `peers.length + 1` — this tab is a person too.
+
+### Read-only is a mode, not a disabled button
+
+A viewer opens with the hand tool, gets no toolbar, no history island, no style
+panel, no reset, and no rename/delete/Drive actions. Keyboard shortcuts return
+early. `changeTool` refuses anything but `hand` for a viewer, so a shortcut or a
+stale tool cannot arm a pen. The text overlay is not mounted. The server still
+refuses writes on both paths: hiding controls is courtesy, the 403 is the rule.
+
+### Failure is still local
+
+A failed room connection leaves `data-live="offline"` and the board keeps
+drawing and saving to IndexedDB. A failed durable push is retried on the next
+debounce and flushed when the tab hides; it never throws into the canvas. A
+share link that cannot be resolved because the network is down says "could not
+reach" and offers a retry, rather than pretending the link is invalid.
 
 ## Offline shell
 
@@ -449,7 +639,7 @@ not on synthetic scores.
 
 ## Deployment
 
-Phase 1 ships as one Node process:
+All of it ships as one Node process:
 
 ```
 pnpm install --frozen-lockfile
@@ -458,17 +648,16 @@ pnpm --filter web start        # honors PORT
 ```
 
 `render.yaml` describes a free Render web service (no card, WebSockets, 750
-instance-hours). `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is declared with `sync: false`,
-so the Drive client id is set in the dashboard and the app still builds and runs
-without it. The free instance sleeps after 15 minutes; `warm.yml` pings it
-every 10 minutes between 02:30 and 18:30 UTC (08:00–24:00 IST), which uses about
-500 of the 750 hours. The app renders local content before any network call, so
-a sleeping instance never blocks a returning user's board.
-
-Phase 3 adds a Node + Socket.IO service in the same repository (`services/`), a
-free Postgres database, and Yjs updates over the existing element model. The
-client already treats elements as field-mergeable and deletions as tombstones,
-so that phase changes the transport, not the data model.
+instance-hours) and declares `DATABASE_URL` and `PENPAPER_SECRET` as
+dashboard-set secrets, with `NEXT_PUBLIC_GOOGLE_CLIENT_ID` optional. Socket.IO
+upgrades share the server with Next, so live rooms cost no second service.
+Postgres is Neon's free tier; the schema is created by the first request, so the
+build never needs the database. With none of these set, the deployment still
+builds and runs as the local-first notepad. The free instance sleeps after 15
+minutes; `warm.yml` pings it every 10 minutes between 02:30 and 18:30 UTC
+(08:00–24:00 IST), which uses about 500 of the 750 hours. The app renders local
+content before any network call, so a sleeping instance never blocks a returning
+user's board.
 
 ## Testing strategy
 
@@ -477,9 +666,10 @@ so that phase changes the transport, not the data model.
   layout, rendering primitives, and the rough cache.
 - **Web unit tests** cover IndexedDB persistence and the notepad index, the Zustand
   metadata store, preferences (including the remembered notepad), Drive file
-  naming and per-element merge, and the reconciler against a mocked Drive with a
+  naming and per-element merge, the reconciler against a mocked Drive with a
   real IndexedDB — pull, merge, save, upload order, coalescing, and recovery
-  from a file deleted in Drive.
+  from a file deleted in Drive — and the shelf's three-way merge (device, Drive,
+  account) including roles and non-duplicated rows.
 - **Playwright** covers the seams that only a real browser can prove: the
   launcher (fresh device, remembered notepad, deleted-last fallback), the menu's
   account block and notepad list (new, rename, delete, 44 px row actions), the
@@ -488,6 +678,17 @@ so that phase changes the transport, not the data model.
   canvas pixels, autosave surviving reload, board isolation, camera restoration,
   text overlay focus/IME-ish behaviour, the 1,000-element frame budget,
   manifest/icons, and the offline shell in a production build.
+
+The live path was verified end to end against Neon with two real browsers: the
+owner draws, an editor link joins and sees the stroke, draws back, and the owner
+sees it; peer cursors appear with the self filtered; a viewer link opens with no
+toolbar or history and cannot draw; both reload with the merged snapshot; and a
+link minted from the Share dialog opens. That check is currently a manual
+script, because it needs a real database and secret; the protocol module, the
+session's state-vector and `updatedAt` reconciliation, and the role guards are
+the next candidates for automated tests.
+
+
 
 Device automation for the Poco F6 and Xiaomi Pad 7 is still a manual pass. iOS
 and Apple Pencil remain targeted but unverified.
