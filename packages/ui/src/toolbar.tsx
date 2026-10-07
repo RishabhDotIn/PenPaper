@@ -1,6 +1,6 @@
 "use client";
 
-import { TOOL_LABELS, TOOL_SHORTCUTS, type Tool } from "@penpaper/engine";
+import { TOOL_LABELS, toolShortcut, type Tool } from "@penpaper/engine";
 import {
   useCallback,
   useEffect,
@@ -58,11 +58,6 @@ export const TOOL_ORDER: readonly Tool[] = [
   "laser",
   "eraser",
 ];
-
-const SHORTCUT_FOR: Partial<Record<Tool, string>> = {};
-for (const [key, tool] of Object.entries(TOOL_SHORTCUTS)) {
-  if (!SHORTCUT_FOR[tool]) SHORTCUT_FOR[tool] = key.toUpperCase();
-}
 
 const isGeometry = (tool: Tool): boolean => GEOMETRY_TOOLS.includes(tool);
 
@@ -189,7 +184,6 @@ export function Toolbar({ value, onChange, className }: ToolbarProps): ReactElem
   }, [close, open]);
 
   const shapeTool = isGeometry(value) ? value : lastShape;
-  const shortcuts = SHORTCUT_FOR;
 
   const choose = (tool: Tool) => {
     onChange(tool);
@@ -231,7 +225,7 @@ export function Toolbar({ value, onChange, className }: ToolbarProps): ReactElem
             );
           }
 
-          const shortcut = shortcuts[slot];
+          const shortcut = toolShortcut(slot);
           const label = TOOL_LABELS[slot];
 
           return (
@@ -273,7 +267,7 @@ export function Toolbar({ value, onChange, className }: ToolbarProps): ReactElem
               }}
             >
               {GEOMETRY_TOOLS.map((tool) => {
-                const shortcut = shortcuts[tool];
+                const shortcut = toolShortcut(tool);
                 return (
                   <button
                     key={tool}

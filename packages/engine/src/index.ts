@@ -120,5 +120,6 @@ export {
   TOOL_LABELS,
   TOOL_SHORTCUTS,
   isShapeTool,
+  toolShortcut,
   type Tool,
 } from "./input/tools";
