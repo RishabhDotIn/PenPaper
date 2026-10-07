@@ -21,6 +21,8 @@ export interface BoardSurfaceProps {
   onPointerMove?: (input: PointerInput) => void;
   onPointerUp?: (input: PointerInput) => void;
   onPointerCancel?: () => void;
+  /** The pointer left the canvas, so hover-only feedback should hide. */
+  onPointerLeave?: () => void;
   onWheel?: (input: WheelInput) => void;
 }
 
@@ -122,6 +124,7 @@ export function BoardSurface({ onReady, maxDpr = 2, cursor = "default", ...handl
     };
 
     const cancel = () => handlersRef.current.onPointerCancel?.();
+    const leave = () => handlersRef.current.onPointerLeave?.();
 
     const wheel = (event: WheelEvent) => {
       // Non-passive so the page cannot scroll or zoom underneath the board.
@@ -142,6 +145,7 @@ export function BoardSurface({ onReady, maxDpr = 2, cursor = "default", ...handl
     canvas.addEventListener("pointermove", move);
     canvas.addEventListener("pointerup", up);
     canvas.addEventListener("pointercancel", cancel);
+    canvas.addEventListener("pointerleave", leave);
     canvas.addEventListener("wheel", wheel, { passive: false });
 
     return () => {
@@ -149,6 +153,7 @@ export function BoardSurface({ onReady, maxDpr = 2, cursor = "default", ...handl
       canvas.removeEventListener("pointermove", move);
       canvas.removeEventListener("pointerup", up);
       canvas.removeEventListener("pointercancel", cancel);
+      canvas.removeEventListener("pointerleave", leave);
       canvas.removeEventListener("wheel", wheel);
     };
   }, []);

@@ -80,7 +80,13 @@ export function Toolbar({ value, onChange, className }: ToolbarProps): ReactElem
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [position, setPosition] = useState<{
+    left: number;
+    top: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
   // The last shape chosen, so the dock button keeps showing what it will draw
   // after the person switches to the pen and back.
   const [lastShape, setLastShape] = useState<Tool>(
@@ -93,9 +99,23 @@ export function Toolbar({ value, onChange, className }: ToolbarProps): ReactElem
 
   const close = useCallback((restoreFocus = false) => {
     setOpen(false);
-    setPosition(null);
     if (restoreFocus) triggerRef.current?.focus();
   }, []);
+
+  // Hold the palette in the DOM while it leaves, exactly like the menu and the
+  // style card: every glass surface should depart the same way it arrived.
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      return;
+    }
+    if (!mounted) return;
+    const timer = window.setTimeout(() => {
+      setMounted(false);
+      setPosition(null);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [open, mounted]);
 
   /**
    * Placed in viewport coordinates through a portal rather than as a child of
@@ -107,8 +127,14 @@ export function Toolbar({ value, onChange, className }: ToolbarProps): ReactElem
 
     const place = () => {
       const anchor = triggerRef.current?.getBoundingClientRect();
-      const panel = panelRef.current?.getBoundingClientRect();
+      const panel = panelRef.current;
       if (!anchor || !panel) return;
+
+      // Layout size, not `getBoundingClientRect()`: the panel mounts mid
+      // `pp-glass-in`, so its measured rect is the scaled-down 0.94 frame and
+      // placing from it would drop the settled panel ~7 px into the dock.
+      const width = panel.offsetWidth;
+      const height = panel.offsetHeight;
 
       const verticalDock = window.matchMedia(DOCK_BREAKPOINT).matches;
       let left: number;
@@ -117,18 +143,23 @@ export function Toolbar({ value, onChange, className }: ToolbarProps): ReactElem
       if (verticalDock) {
         // Beside the dock on desktop, centred on the button.
         left = anchor.right + GAP;
-        top = anchor.top + anchor.height / 2 - panel.height / 2;
+        top = anchor.top + anchor.height / 2 - height / 2;
       } else {
         // Above the dock, which is where thumbs and the dock itself leave room.
-        left = anchor.left + anchor.width / 2 - panel.width / 2;
-        top = anchor.top - panel.height - GAP;
+        left = anchor.left + anchor.width / 2 - width / 2;
+        top = anchor.top - height - GAP;
         // A short window cannot drop up; falling below is better than clipping.
         if (top < EDGE) top = anchor.bottom + GAP;
       }
 
-      left = Math.min(Math.max(EDGE, left), window.innerWidth - panel.width - EDGE);
-      top = Math.min(Math.max(EDGE, top), window.innerHeight - panel.height - EDGE);
-      setPosition({ left, top });
+      left = Math.min(Math.max(EDGE, left), window.innerWidth - width - EDGE);
+      top = Math.min(Math.max(EDGE, top), window.innerHeight - height - EDGE);
+      setPosition({
+        left,
+        top,
+        originX: anchor.left + anchor.width / 2 - left,
+        originY: anchor.top + anchor.height / 2 - top,
+      });
     };
 
     place();
@@ -221,7 +252,7 @@ export function Toolbar({ value, onChange, className }: ToolbarProps): ReactElem
         })}
       </div>
 
-      {open && typeof document !== "undefined"
+      {open || mounted
         ? createPortal(
             <div
               ref={panelRef}
@@ -229,10 +260,16 @@ export function Toolbar({ value, onChange, className }: ToolbarProps): ReactElem
               role="group"
               aria-label="Shapes"
               data-testid="shape-menu"
+              data-state={open ? "open" : "closed"}
+              aria-hidden={!open}
+              inert={!open}
               style={{
                 left: position?.left ?? -9999,
                 top: position?.top ?? -9999,
                 visibility: position ? "visible" : "hidden",
+                transformOrigin: position
+                  ? `${position.originX}px ${position.originY}px`
+                  : undefined,
               }}
             >
               {GEOMETRY_TOOLS.map((tool) => {

@@ -124,6 +124,7 @@ export function AppMenu({
   trailing,
 }: AppMenuProps) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [view, setView] = useState<"root" | "notepads">("root");
   const [confirmReset, setConfirmReset] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -157,6 +158,18 @@ export function AppMenu({
     };
   }, [open]);
 
+  // Keep the panel in the DOM for the length of its departure, so closing is a
+  // material leaving the screen rather than a node vanishing between frames.
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      return;
+    }
+    if (!mounted) return;
+    const timer = window.setTimeout(() => setMounted(false), 180);
+    return () => window.clearTimeout(timer);
+  }, [open, mounted]);
+
   // A destructive action should not stay armed forever if the menu is left
   // open and the person walks away.
   useEffect(() => {
@@ -172,15 +185,15 @@ export function AppMenu({
     return () => clearTimeout(timer);
   }, [confirmDelete]);
 
-  // Closing resets the view, so the menu always opens on the root actions
-  // rather than wherever the last visit left it.
+  // Reset after the exit animation, not when the close begins: switching the
+  // visible view mid-departure reads as a flicker, not as the menu leaving.
   useEffect(() => {
-    if (open) return;
+    if (mounted) return;
     setView("root");
     setRenamingId(null);
     setConfirmDelete(null);
     setRowError(null);
-  }, [open]);
+  }, [mounted]);
 
   // A view swap removes the button that was focused. Send focus to the new
   // view's first control so a keyboard user is not dropped on <body>.
@@ -275,13 +288,16 @@ export function AppMenu({
         {trailing}
       </div>
 
-      {open ? (
+      {open || mounted ? (
         <div
           className="pp-menu"
           role="dialog"
           aria-label="Board menu"
           data-testid="app-menu"
           data-view={view}
+          data-state={open ? "open" : "closed"}
+          aria-hidden={!open}
+          inert={!open}
         >
           {view === "notepads" ? (
             <div className="pp-menu-view" data-testid="app-menu-notepads">

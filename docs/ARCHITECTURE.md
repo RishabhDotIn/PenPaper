@@ -47,15 +47,19 @@ properties, text editor). Everything inside the canvas is painted by the engine:
 3. **Elements** — `Scene.ordered()` returns live elements sorted by fractional
    `index`. A quadtree-backed view bounds check culls anything off screen before
    `drawElement` runs.
-4. **Overlays** — selection handles and marquee in screen space, after the
-   camera transform is popped.
-5. **Laser** — the transient pointer trail, painted last so it always sits on
-   top, and omitted from `toDataUrl()` so an export never contains it.
+4. **Overlays** — the selection silhouette (box, ellipse, or the polygon's own
+   vertices) and its handles, plus the marquee, in screen space after the camera
+   transform is popped. Multi-selection keeps a dashed group box.
+5. **Effects** — the laser trail and the eraser's ring, trail, and departing
+   ghosts. They paint last so they sit on top, ghosts paint inside the camera
+   transform so they stay glued to the paper, and `toDataUrl()` drops all of
+   them so an export never contains a gesture.
 
 `render()` returns immediately when no dirty flag was set. Pointer moves mark
-the frame dirty; an idle board does no work. While a laser trail is fading there
-are no further pointer events, so `BoardScreen` keeps requesting frames and
-marks the renderer dirty until `laserActive()` says the trail is gone.
+the frame dirty; an idle board does no work. While a trail is fading there are
+no further pointer events, so `BoardScreen` keeps requesting frames and marks
+the renderer dirty until `effectsActive()` says both the laser and the eraser
+have finished.
 
 Rough.js is used as a *geometry generator*, never as a canvas renderer. The
 engine caches drawables by type, size, seed, and style. Position and rotation
@@ -112,6 +116,26 @@ The laser is a pointer, not a tool in the scene: its samples live on the
 controller in a capped ring (320 points, 2 px minimum step, 850 ms fade), never
 in `Scene`, never in history, never in a saved board. Changing tools clears it
 so a trail can never bleed into ink.
+
+The eraser is the same idea applied to deletion. A press tombstones the hit
+element immediately (one undo step), but the controller keeps a copy taken
+before the tombstone so the renderer can shrink and fade it out over 220 ms.
+The ring is an 11 px screen-space circle; a soft trail is recorded only while
+pressed (160 points, 2 px step) and fades over 320 ms. The hit path is sampled
+at half the pick tolerance, so a fast flick erases continuously instead of
+leaving a dotted line of survivors between pointer events. Hovering moves the
+ring without leaving a trail, and none of this reaches the scene, history, a
+saved board, or an export.
+
+Selection handles are anchored per shape, not per bounding box
+(`selection/handles.ts`). Rectangles, lines, arrows, text, and freehand keep the
+eight-handle grid because their geometry is a box; diamonds and ellipses use
+the four cardinal extremes; triangles, hexagons, and stars place one handle on
+each outer vertex, with a star showing only its five tips. Each anchor is still
+mapped to one of the nine resize directions, so `resizeElement` has a single
+code path. `selection-overlay.ts` traces the matching silhouette — an ellipse
+for ellipses, the shared polygon vertex table for polygons — so a handle never
+floats in empty paper.
 
 History is transaction-based, not command-per-event:
 
@@ -183,6 +207,17 @@ The island and its popover are siblings, not nested: a `backdrop-filter`
 ancestor creates a backdrop root, and a descendant blur would then sample that
 root (nothing) instead of the canvas. Keeping them siblings is what preserves
 the glass material over the drawing.
+
+That material is one shared layer in `ui.css`, not a per-component style: a
+translucent tint, a saturating backdrop blur, a specular sheen along the top
+edge, a hairline rim, and a depth shadow. The tokens live in `globals.css` so
+light and dark boards stay in step, and `prefers-reduced-transparency` (or a
+missing `backdrop-filter`) falls back to a solid island. Motion is shared too:
+`pp-glass-in` (220 ms spring) and `pp-glass-out` (160 ms ease-out). The menu,
+shape palette, and style popover stay mounted for the 180 ms exit and then
+unmount, so closing is a surface leaving rather than a node vanishing between
+frames. Their transform origin points at the button or dock item that opened
+them, which makes the same animation feel local to each control.
 
 Choosing a tool other than `select` or `hand` clears the selection, so the
 panel's target follows intent: after tapping "rectangle" the panel means "the

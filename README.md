@@ -33,15 +33,23 @@ deleted, or synced without leaving the canvas.
   cross-hatch, solid).
 - **Text** with a real browser textarea overlay, IME composition, wrapped
   layout, and no iOS focus zoom.
-- **Selection and transforms** — click, shift-click, marquee, move, resize from
-  eight handles, and rotate, including on rotated elements. A finished pen
-  stroke stays unselected, so fresh writing never grows resize handles and the
-  style panel keeps pointing at the next stroke. Handles also work while a shape
-  tool is still armed, and a right-click adjusts instead of drawing, so tweaking
-  the shape you just made never costs a trip to the selection tool.
+- **Selection and transforms** — click, shift-click, marquee, move, resize, and
+  rotate, including on rotated elements. Handles follow the shape instead of
+  boxing it: a diamond and an ellipse get four cardinal dots, a triangle,
+  hexagon, and star put one on every outer corner (a star only its five tips),
+  and box-shaped things keep the eight-handle grid. The selection outline traces
+  that same silhouette rather than an empty corner. A finished pen stroke stays
+  unselected, so fresh writing never grows resize handles and the style panel
+  keeps pointing at the next stroke. Handles also work while a shape tool is
+  still armed, and a right-click adjusts instead of drawing, so tweaking the
+  shape you just made never costs a trip to the selection tool.
 - **Laser pointer** (`L`) — a GoodNotes-style fading trail for pointing at the
   board. It is light, not ink: it never enters the scene, the undo history,
   a saved board, or a PNG export.
+- **Eraser** — an Excalidraw-style ring that follows the pointer. Pressing leaves
+  a soft trail and the element shrinks away instead of vanishing between frames;
+  hover shows only the ring. Erasing is immediate and one undo step, and the
+  animation is never saved or exported.
 - **A style box that works before you draw.** Pick the pen, a shape, or the text
   tool and the panel edits the *next* element: stroke and background colour,
   fill, stroke width, dash, roughness, opacity, font, and arrowheads. Pick
@@ -59,7 +67,10 @@ deleted, or synced without leaving the canvas.
   tablet width up, and a style popover anchored to the palette button on
   smaller screens. The bottom edge holds the dock alone - there is no permanent
   colour bar, and no title bar or wordmark. Every coarse-pointer target is at
-  least 44 px.
+  least 44 px. Every floating surface — dock, menu, shape palette, style card,
+  history island — shares one Liquid Glass material and one motion language:
+  a 220 ms spring arrival that grows from the control that opened it, and a
+  160 ms exit, so nothing pops in or vanishes between frames.
 - **Installable PWA** with offline app shell, manifest, maskable icons, and a
   service worker that serves the board offline after the first visit.
 - **A seeded demo board** at `/b/demo` — title, hand-drawn underline, three
@@ -141,11 +152,11 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 
 | Metric | Result | Gate |
 | --- | --- | --- |
-| Engine unit tests | 182 passing | all green |
+| Engine unit tests | 207 passing | all green |
 | Web unit tests | 67 passing | all green |
 | Browser tests | 45 passing | all green |
 | Median renderer frame body, 1,000 mixed shapes | 7.4–9.3 ms production | ≤ 16 ms |
-| Board route transfer, gzip | 182.0 KiB JS + CSS | ≤ 220 kB |
+| Board route transfer, gzip | 183.2 KiB JS + CSS | ≤ 220 kB |
 
 The frame measurement is the renderer's own body (cull, layout, paint commands),
 not `requestAnimationFrame` deltas, which are clamped to the display refresh rate

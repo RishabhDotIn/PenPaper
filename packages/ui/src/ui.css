@@ -11,8 +11,9 @@
  * One material for every floating island.
  *
  * Glass is layers, not a blur: a translucent tint, a saturating backdrop blur,
- * a specular highlight on the top edge, a hairline rim, and enough depth shadow
- * to float. The saturation boost is what makes it look lit instead of frosted.
+ * a specular sheen caught along the top edge, a hairline rim, and enough depth
+ * shadow to float. The saturation boost is what makes it look lit instead of
+ * frosted; the sheen is what keeps it visible over white paper.
  */
 .pp-dock,
 .pp-menu-island,
@@ -20,20 +21,52 @@
 .pp-menu,
 .pp-panel,
 .pp-popover,
+.pp-shape-menu,
 .pp-panel-toggle {
-  background: var(--glass-tint);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
-  backdrop-filter: blur(18px) saturate(180%);
+  background-color: var(--glass-tint);
+  background-image: linear-gradient(180deg, var(--glass-sheen), transparent 46%);
+  -webkit-backdrop-filter: blur(22px) saturate(200%);
+  backdrop-filter: blur(22px) saturate(200%);
   box-shadow: var(--glass-shadow);
 }
 
 /* Bigger surfaces carry a thicker material so text stays crisp over the grid. */
 .pp-menu,
 .pp-panel,
-.pp-popover {
-  background: var(--glass-thick);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  backdrop-filter: blur(32px) saturate(180%);
+.pp-popover,
+.pp-shape-menu {
+  background-color: var(--glass-thick);
+  -webkit-backdrop-filter: blur(36px) saturate(200%);
+  backdrop-filter: blur(36px) saturate(200%);
+}
+
+/* One arrival and one departure for every glass surface. Scale grows out of
+   the surface's own origin (the button, the menu corner, the icon), so the
+   motion is the same everywhere but always points at what opened it. */
+@keyframes pp-glass-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.004);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pp-glass-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
 }
 
 /* ------------------------------------------------------------------ dock */
@@ -183,26 +216,16 @@
   gap: 2px;
   min-width: 250px;
   padding: 5px;
-  border-radius: 12px;
+  border-radius: 16px;
 
-  background: var(--glass-thick);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: var(--glass-shadow);
-
-  /* Grows out of the button it belongs to, rather than appearing at it. */
-  animation: pp-shape-in 170ms var(--ease-spring);
+  /* Same material, same motion as the menu and the style card. */
+  animation: pp-glass-in 220ms var(--ease-spring);
+  will-change: transform, opacity;
 }
 
-@keyframes pp-shape-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+.pp-shape-menu[data-state="closed"] {
+  animation: pp-glass-out 160ms var(--ease-out) forwards;
+  pointer-events: none;
 }
 
 .pp-shape-option {
@@ -298,7 +321,7 @@
   align-items: center;
   gap: 2px;
   padding: 4px;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
 /* A mouse does not need a 44 px target; 32 px matches the history island. */
@@ -368,27 +391,16 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 
-  background: var(--glass-thick);
-  border-radius: 12px;
+  background-color: var(--glass-thick);
+  border-radius: 16px;
   transform-origin: top left;
-  animation: pp-pop-in 240ms var(--ease-spring);
+  animation: pp-glass-in 220ms var(--ease-spring);
+  will-change: transform, opacity;
 }
 
-/* A small overshoot at 55% is the spring tell: the menu settles into place
-   instead of stopping dead. */
-@keyframes pp-pop-in {
-  from {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.94);
-  }
-  55% {
-    opacity: 1;
-    transform: translateY(1px) scale(1.006);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+.pp-menu[data-state="closed"] {
+  animation: pp-glass-out 160ms var(--ease-out) forwards;
+  pointer-events: none;
 }
 
 .pp-menu-item {
@@ -1111,9 +1123,9 @@
     pointer-events: none;
     transform: translateY(-50%) translateX(calc(100% + 24px));
     transition:
-      transform 420ms var(--ease-spring),
-      opacity 180ms var(--ease-out),
-      visibility 0s linear 420ms;
+      transform 280ms var(--ease-spring),
+      opacity 160ms var(--ease-out),
+      visibility 0s linear 280ms;
   }
 
   .pp-panel-dock.is-open .pp-properties-desktop {
@@ -1122,7 +1134,7 @@
     pointer-events: auto;
     transform: translateY(-50%);
     transition:
-      transform 420ms var(--ease-spring),
+      transform 280ms var(--ease-spring),
       opacity 160ms var(--ease-out);
   }
 
@@ -1149,7 +1161,7 @@
     right: 8px;
     transform: translateY(-50%);
     transition:
-      transform 420ms var(--ease-spring),
+      transform 280ms var(--ease-spring),
       color 120ms ease,
       background-color 120ms ease;
 
@@ -1401,42 +1413,14 @@
 
   border-radius: 16px;
   transform-origin: 72px 0;
-  animation: pp-popover-in 260ms var(--ease-spring);
+  animation: pp-glass-in 220ms var(--ease-spring);
   will-change: transform, opacity;
-}
-
-/* Materialize from the palette button: the card scales up from the icon and
-   settles with a small overshoot instead of fading in place. */
-@keyframes pp-popover-in {
-  from {
-    opacity: 0;
-    transform: translateY(-10px) scale(0.92);
-  }
-  55% {
-    opacity: 1;
-    transform: translateY(1px) scale(1.006);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 /* Departures are quieter than arrivals: a short shrink back toward the icon. */
 .pp-popover[data-state="closed"] {
-  animation: pp-popover-out 160ms var(--ease-out) forwards;
+  animation: pp-glass-out 160ms var(--ease-out) forwards;
   pointer-events: none;
-}
-
-@keyframes pp-popover-out {
-  from {
-    opacity: 1;
-    transform: none;
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.96);
-  }
 }
 
 .pp-popover-content {
@@ -1485,6 +1469,14 @@
 
   .pp-menu-view {
     animation: none;
+  }
+
+  /* No exit animation means the surface would otherwise sit fully visible for
+     the unmount timer's 180 ms. Hide it immediately instead. */
+  .pp-menu[data-state="closed"],
+  .pp-shape-menu[data-state="closed"],
+  .pp-popover[data-state="closed"] {
+    opacity: 0;
   }
 }
 

@@ -133,13 +133,13 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     frameRef.current = requestAnimationFrame(() => {
       frameRef.current = 0;
       const controller = controllerRef.current;
-      // The laser fades on its own: its frames have no input event to mark the
-      // renderer dirty, and an early-returning frame would leave the trail
-      // frozen on screen at its last opacity.
-      const fadingLaser = controller?.laserActive() ?? false;
-      if (fadingLaser) rendererRef.current?.markDirty();
+      // Trails fade on their own: their frames have no input event to mark the
+      // renderer dirty, and an early-returning frame would leave them frozen on
+      // screen at their last opacity.
+      const effects = controller?.effectsActive() ?? false;
+      if (effects) rendererRef.current?.markDirty();
       rendererRef.current?.render();
-      if (fadingLaser) scheduleRender();
+      if (effects) scheduleRender();
     });
   }, []);
 
@@ -221,6 +221,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     renderer.setSelection(controller.selectedElements);
     renderer.setMarquee(controller.marquee);
     renderer.setLaser(controller.laserTrail);
+    renderer.setEraser(controller.eraser);
   }, []);
 
   const refreshSelection = useCallback(() => {
@@ -584,6 +585,10 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     controllerRef.current?.pointerCancel();
   }, []);
 
+  const onPointerLeave = useCallback(() => {
+    controllerRef.current?.pointerLeave();
+  }, []);
+
   const onWheel = useCallback((input: WheelInput) => {
     controllerRef.current?.wheel(input);
   }, []);
@@ -680,7 +685,15 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   const editingElement = editingId ? sceneRef.current?.get(editingId) : undefined;
 
   const cursor =
-    tool === "hand" ? "grab" : tool === "text" ? "text" : tool === "select" ? "default" : "crosshair";
+    tool === "hand"
+      ? "grab"
+      : tool === "text"
+        ? "text"
+        : tool === "select"
+          ? "default"
+          : tool === "eraser"
+            ? "none"
+            : "crosshair";
 
   return (
     <main
@@ -697,6 +710,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
+        onPointerLeave={onPointerLeave}
         onWheel={onWheel}
       />
 
