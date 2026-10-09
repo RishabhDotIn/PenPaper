@@ -88,12 +88,3 @@ export function cleanTitle(raw: unknown, fallback = "Untitled notepad"): string 
   const title = raw.replace(/\s+/g, " ").trim().slice(0, 120);
   return title.length > 0 ? title : fallback;
 }
-
-export function cleanEmail(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const email = raw.trim().toLowerCase();
-  if (email.length > 254) return null;
-  // Deliberately loose: the address is an identifier here, not a deliverable.
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return null;
-  return email;
-}

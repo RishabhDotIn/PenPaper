@@ -262,7 +262,7 @@ hint. The API surface is:
 
 | Route | Purpose |
 | --- | --- |
-| `POST /api/auth/sign-up`, `sign-in`, `sign-out` | email/password session |
+| `POST /api/auth/google`, `sign-out` | Google ID token, then PenPaper's session cookie |
 | `GET /api/auth/me` | who is here, and whether accounts/rooms are configured |
 | `GET/POST /api/boards` | the account's library; register a device notepad |
 | `GET/PUT/DELETE /api/boards/<id>` | one snapshot, its role, its title |
@@ -442,11 +442,19 @@ signature check.
 
 ### Accounts
 
-Hand-rolled rather than a framework: two tables, no OAuth dependency, no
-external auth service.
+Google is the only way in, and there is no password anywhere in the system.
 
-- Passwords are hashed with `scrypt` and a per-user salt; comparison is
-  constant-time.
+- The browser renders Google's own button (Google Identity Services). A click
+  opens Google's popup and returns an ID token — a short-lived JWT signed by
+  Google.
+- `/api/auth/google` verifies that JWT locally with `jose` against Google's
+  published keys, checking issuer, audience (the public client id), and a
+  verified email. No client secret, no code exchange, no call to Google per
+  sign-in. Rejections are a single 401 sentence, because every failure means the
+  same thing to the person in front of the screen.
+- The user row is keyed by Google's stable `sub`, so changing a Google address
+  keeps the library. A row created before Google-only sign-in is adopted when
+  the verified address matches, then the password column is dropped.
 - Sessions are random 32-byte tokens stored only as SHA-256 hashes, in an
   `httpOnly`, `SameSite=Lax`, `Secure`-in-production cookie with a 30-day
   expiry. A stolen database row does not become a usable cookie.
@@ -454,6 +462,11 @@ external auth service.
   user. Every protected route calls it; components never see a token.
 - Rate limits are per-IP and advisory, keyed on `x-forwarded-for` when Render
   supplies it.
+
+The client id must list the site's origin under **Authorized JavaScript
+origins** in Google Cloud Console. That allowlist is what lets Google's button
+return a token; a wrong origin shows as "the given origin is not allowed" in the
+console and nowhere else, which is why the deployment notes call it out.
 
 A Neon project suspends when idle. The connection pool is deliberately small
 (one process, 0.1 CPU) and the schema creates itself with `create table if not

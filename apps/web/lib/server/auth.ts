@@ -1,66 +1,75 @@
-import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual, type ScryptOptions } from "node:crypto";
-import { promisify } from "node:util";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { ready, sql } from "./db";
+import type { GoogleIdentity } from "./google";
 
 /**
- * Accounts without an auth provider.
+ * Accounts, backed by Google and by our own sessions.
  *
- * The alternative was Better Auth, which brings a schema generator, an adapter,
- * and a version to track for four endpoints and one cookie. What is here is the
- * part that actually matters: scrypt password hashes with a per-user salt,
- * random session tokens stored as hashes, and a cookie the browser cannot read.
+ * There is no password to store: Google is the only way in, and it hands the
+ * page a signed ID token that the server verifies against Google's keys. What
+ * remains is the small part that actually matters — a user row per Google
+ * account, random session tokens stored only as hashes, and a cookie the
+ * browser cannot read. No auth provider, no adapter, no schema generator.
  */
-
-const scrypt = promisify(scryptCallback) as (
-  password: string | Buffer,
-  salt: string | Buffer,
-  keylen: number,
-  options: ScryptOptions,
-) => Promise<Buffer>;
 
 const SESSION_COOKIE = "pp_session";
 const SESSION_DAYS = 30;
-/** scrypt work factor: 16 MB of memory per hash, about 40 ms on a laptop. */
-const SCRYPT = { N: 16_384, r: 8, p: 1, keylen: 64 };
 
 export interface User {
   id: string;
   email: string;
   name: string;
-}
-
-function toHex(buffer: Buffer): string {
-  return buffer.toString("hex");
-}
-
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16);
-  const key = (await scrypt(password, salt, SCRYPT.keylen, {
-    N: SCRYPT.N,
-    r: SCRYPT.r,
-    p: SCRYPT.p,
-  })) as Buffer;
-
-  return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${toHex(salt)}$${toHex(key)}`;
-}
-
-export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [scheme, n, r, p, saltHex, keyHex] = stored.split("$");
-  if (scheme !== "scrypt" || !n || !r || !p || !saltHex || !keyHex) return false;
-
-  const expected = Buffer.from(keyHex, "hex");
-  const key = (await scrypt(password, Buffer.from(saltHex, "hex"), expected.length, {
-    N: Number(n),
-    r: Number(r),
-    p: Number(p),
-  })) as Buffer;
-
-  return key.length === expected.length && timingSafeEqual(key, expected);
+  picture: string | null;
 }
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+/**
+ * Finds the user behind a verified Google identity, creating one if needed.
+ *
+ * `sub` is Google's stable id, so the same person keeps their board library if
+ * they ever change their Google address. If the address already has a row from
+ * the old email/password era, this adopts it rather than making a second
+ * account: Google has verified that the person owns the address.
+ */
+export async function signInWithGoogle(identity: GoogleIdentity): Promise<User> {
+  await ready();
+  const db = sql();
+
+  const [linked] = await db`
+    select id, email, name, picture from pp_users where google_sub = ${identity.sub}
+  `;
+  if (linked) {
+    const [updated] = await db`
+      update pp_users
+      set name = ${identity.name}, picture = ${identity.picture}
+      where id = ${linked.id}
+      returning id, email, name, picture
+    `;
+    return updated as User;
+  }
+
+  const [row] = await db`
+    insert into pp_users (id, email, name, picture, google_sub)
+    values (${randomUUID()}, ${identity.email}, ${identity.name}, ${identity.picture}, ${identity.sub})
+    on conflict (email) do update
+      set google_sub = excluded.google_sub,
+          name = excluded.name,
+          picture = coalesce(excluded.picture, pp_users.picture)
+      where pp_users.google_sub is null
+    returning id, email, name, picture
+  `;
+
+  if (!row) {
+    // The address belongs to a different Google account. Do not merge: two
+    // people can share a name, and only one of them owns this library.
+    throw new Error("That email is connected to a different Google account");
+  }
+
+  return row as User;
 }
 
 /**
@@ -119,7 +128,7 @@ export async function currentUser(): Promise<User | null> {
 
   await ready();
   const [row] = await sql()`
-    select u.id, u.email, u.name
+    select u.id, u.email, u.name, u.picture
     from pp_sessions s
     join pp_users u on u.id = s.user_id
     where s.token_hash = ${hashToken(token)} and s.expires_at > now()

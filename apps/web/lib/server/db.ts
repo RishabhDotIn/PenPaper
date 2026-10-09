@@ -50,10 +50,23 @@ async function createSchema(): Promise<void> {
       id uuid primary key,
       email text not null unique,
       name text not null,
-      password_hash text not null,
+      picture text,
+      google_sub text,
       created_at timestamptz not null default now()
     )
   `;
+
+  // Databases created before Google sign-in have a password column and no
+  // Google ids. Every statement below is a no-op on a database that already
+  // has the current shape, so this runs on each cold start without a
+  // migration table to keep in sync.
+  await db`alter table pp_users add column if not exists picture text`;
+  await db`alter table pp_users add column if not exists google_sub text`;
+  await db`
+    create unique index if not exists pp_users_google on pp_users (google_sub)
+    where google_sub is not null
+  `;
+  await db`alter table pp_users drop column if exists password_hash`;
 
   await db`
     create table if not exists pp_sessions (
