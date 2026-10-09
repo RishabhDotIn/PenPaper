@@ -94,6 +94,57 @@ describe("buildShelf", () => {
     );
     expect(item?.updatedAt).toBe(9_000);
   });
+
+  it("shows a notepad that only exists in the account, with its role", () => {
+    const [item] = buildShelf([], [], [
+      { id: "from-account", title: "Thermo", elementCount: 9, updatedAt: 3_000, role: "owner" },
+    ]);
+
+    expect(item).toMatchObject({
+      id: "from-account",
+      title: "Thermo",
+      source: "server",
+      elementCount: 9,
+      server: true,
+      role: "owner",
+      // The account is not Drive: the Drive toggle must stay off.
+      inLibrary: false,
+    });
+  });
+
+  it("joins the device and account copies without duplicating the row", () => {
+    const items = buildShelf(
+      [meta("both", { title: "Draft", updatedAt: 4_000 })],
+      [],
+      [{ id: "both", title: "Final", elementCount: 1, updatedAt: 2_000, role: "owner" }],
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id: "both",
+      title: "Final",
+      source: "local",
+      server: true,
+      // The device can count its own shapes; the server summary is the fallback.
+      elementCount: 3,
+    });
+  });
+
+  it("joins a board that is on the device, in Drive, and in the account", () => {
+    const [item] = buildShelf(
+      [meta("all", { inLibrary: true })],
+      [remote("all", { modifiedTime: new Date(5_000).toISOString() })],
+      [{ id: "all", title: "Everything", elementCount: 3, updatedAt: 6_000, role: "editor" }],
+    );
+
+    expect(item).toMatchObject({
+      source: "both",
+      inLibrary: true,
+      server: true,
+      role: "editor",
+      updatedAt: 6_000,
+    });
+  });
 });
 
 describe("formatAgo", () => {

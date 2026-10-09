@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { AccountPanel } from "@/components/AccountPanel";
 import { driveConfigured, requestSession } from "@/lib/drive/auth";
 import { syncLibrary } from "@/lib/drive/sync";
 import { useDriveSession } from "@/lib/drive/use-drive-session";
@@ -22,7 +23,7 @@ import { useNotepads } from "@/lib/use-notepads";
 export function Launcher() {
   const router = useRouter();
   const session = useDriveSession();
-  const { items, refreshLocal, refreshRemote } = useNotepads();
+  const { items, refreshLocal, refreshRemote, refreshServer } = useNotepads();
 
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState<"new" | "connect" | null>(null);
@@ -55,15 +56,19 @@ export function Launcher() {
         return;
       }
 
-      // Not stored here. If an account is connected the notepad may still be in
-      // Drive, which is exactly the second-device case.
-      if (session) {
-        const localIds = new Set((await listBoards().catch(() => [])).map((board) => board.id));
-        const remote = await refreshRemote();
-        if (!cancelled && (localIds.has(last) || remote.some((board) => board.boardId === last))) {
-          router.replace(`/b/${last}`);
-          return;
-        }
+      // Not stored here. The notepad may still be in the account or in Drive,
+      // which is exactly the second-device case.
+      const localIds = new Set((await listBoards().catch(() => [])).map((board) => board.id));
+      const remote = await refreshRemote();
+      const server = await refreshServer();
+      if (
+        !cancelled &&
+        (localIds.has(last) ||
+          remote.some((board) => board.boardId === last) ||
+          server.some((board) => board.id === last))
+      ) {
+        router.replace(`/b/${last}`);
+        return;
       }
 
       forgetBoard(last);
@@ -73,7 +78,7 @@ export function Launcher() {
     return () => {
       cancelled = true;
     };
-  }, [router, session, refreshRemote]);
+  }, [router, refreshRemote, refreshServer]);
 
   // A connected device shows what Drive has without opening the shelf.
   useEffect(() => {
@@ -180,6 +185,7 @@ export function Launcher() {
                     <span className="launch-row-title">{item.title}</span>
                     <span className="launch-row-meta">
                       {describeCount(item.elementCount)} · {formatAgo(item.updatedAt)}
+                      {item.server ? " · Your library" : ""}
                       {item.inLibrary ? " · In Drive" : ""}
                     </span>
                   </span>
@@ -222,6 +228,19 @@ export function Launcher() {
             device.
           </p>
         ) : null}
+
+        {/* The chooser is the one screen a new device is guaranteed to see, so
+            the account belongs here as well as in the board menu. Signing in
+            refreshes both remote shelves in place. */}
+        <div className="launch-account-slot">
+          <AccountPanel
+            variant="launcher"
+            onChanged={() => {
+              void refreshLocal();
+              void refreshRemote();
+            }}
+          />
+        </div>
 
         <footer className="launch-foot">
           <span className="launch-foot-note">

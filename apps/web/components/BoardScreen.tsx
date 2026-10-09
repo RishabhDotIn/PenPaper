@@ -2,6 +2,8 @@
 
 import { BoardChrome } from "@/components/BoardChrome";
 import { BoardSurface, type SurfaceSize } from "@/components/BoardSurface";
+import { PeerCursors } from "@/components/PeerCursors";
+import { ShareDialog } from "@/components/ShareDialog";
 import { TextEditorOverlay } from "@/components/TextEditorOverlay";
 import {
   effectiveTheme,
@@ -10,7 +12,18 @@ import {
   savePreferences,
   type Preferences,
 } from "@/lib/preferences";
-import { saveBoard, type BoardSnapshot } from "@/lib/storage";
+import { defaultTitle, loadMeta, saveBoard, type BoardSnapshot } from "@/lib/storage";
+import { accountUser, useAccountStore } from "@/lib/collab/account";
+import type { Role } from "@/lib/collab/api";
+import {
+  ensureServerBoard,
+  flushServerSync,
+  mergeServerElements,
+  pullServerBoard,
+  queueServerSync,
+} from "@/lib/collab/board-sync";
+import { guestId } from "@/lib/collab/identity";
+import type { CollabPeer, CollabSession } from "@/lib/collab/session";
 import {
   flushSyncQueue,
   queueBoardSync,
@@ -61,6 +74,15 @@ const CREATION_TOOLS: ReadonlySet<Tool> = new Set([
 /** Long enough to coalesce a stroke, short enough to survive a tab crash. */
 const SAVE_DEBOUNCE_MS = 500;
 
+/**
+ * How often a moving stroke is offered to the room.
+ *
+ * The engine keeps the in-progress element in the scene, so a peer can watch it
+ * grow. Sending the whole element ten times a second is cheap for a handful of
+ * people and still feels live; every frame would be ink at 60 Hz with no gain.
+ */
+const COLLAB_PUSH_MS = 100;
+
 export interface BoardInitialState {
   elements: Element[];
   camera: Camera;
@@ -70,6 +92,10 @@ export interface BoardScreenProps {
   boardId: string;
   /** Hydrated from IndexedDB before this component mounts. */
   initial?: BoardInitialState | null;
+  /** The invitation this tab opened with, if any. */
+  shareToken?: string | null;
+  /** Already resolved by the loader for a share link. */
+  initialRole?: Role | null;
 }
 
 /**
@@ -80,7 +106,12 @@ export interface BoardScreenProps {
  * in React state, so a board with thousands of shapes does not produce
  * thousands of re-renders while drawing.
  */
-export function BoardScreen({ boardId, initial }: BoardScreenProps) {
+export function BoardScreen({
+  boardId,
+  initial,
+  shareToken = null,
+  initialRole = null,
+}: BoardScreenProps) {
   const sceneRef = useRef<Scene | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const controllerRef = useRef<InputController | null>(null);
@@ -89,8 +120,11 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   const frameRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
+  const collabRef = useRef<CollabSession | null>(null);
+  const collabTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const roleRef = useRef<Role | null>(initialRole);
 
-  const [tool, setTool] = useState<Tool>("select");
+  const [tool, setTool] = useState<Tool>(initialRole === "viewer" ? "hand" : "select");
   const [selection, setSelection] = useState<Element[]>([]);
   const [elementCount, setElementCount] = useState(initial?.elements.length ?? 0);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -98,9 +132,18 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>(() => loadPreferences());
-  const toolRef = useRef<Tool>("select");
+  const [role, setRole] = useState<Role | null>(initialRole);
+  const [liveStatus, setLiveStatus] = useState<"offline" | "connecting" | "online">("offline");
+  const [peers, setPeers] = useState<CollabPeer[]>([]);
+  const [shareOpen, setShareOpen] = useState(false);
+  const toolRef = useRef<Tool>(initialRole === "viewer" ? "hand" : "select");
   const preferencesRef = useRef(preferences);
   preferencesRef.current = preferences;
+  roleRef.current = role;
+
+  const readOnly = role === "viewer";
+  /** The room's head count: this tab is a person too. */
+  const people = peers.length + 1;
 
   // The next visit to `/` opens this notepad, not the shelf.
   useEffect(() => {
@@ -172,9 +215,10 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     try {
       await saveBoard(boardId, snapshot);
       useBoardStore.getState().markSaved(snapshot.savedAt);
-      // Local first, Drive a beat later. This call is a no-op unless a session
-      // exists and the board belongs to the library.
+      // Local first, Drive and the account a beat later. Each call is a no-op
+      // unless that service is connected; a guest viewer never writes at all.
       queueBoardSync(boardId);
+      if (roleRef.current !== "viewer") queueServerSync(boardId, shareToken);
     } catch (error) {
       // A board that cannot be written must still be usable. The next edit or
       // an explicit flush retries; the visible chrome reports the problem.
@@ -182,7 +226,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
       useBoardStore.getState().setStatus("unavailable");
       console.warn("PenPaper: could not save board locally", error);
     }
-  }, [boardId]);
+  }, [boardId, shareToken]);
 
   /**
    * Debounced write: pointer-up and camera settles are the moments that matter,
@@ -225,7 +269,12 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   }, []);
 
   const refreshSelection = useCallback(() => {
-    setSelection(controllerRef.current?.selectedElements ?? []);
+    const controller = controllerRef.current;
+    const selected = controller?.selectedElements ?? [];
+    setSelection(selected);
+    // Selection is presence, not drawing: it tells the room what this person is
+    // about to touch. The session drops an unchanged set on its own.
+    collabRef.current?.selection(selected.map((element) => element.id));
     syncOverlays();
     scheduleRender();
   }, [scheduleRender, syncOverlays]);
@@ -236,6 +285,29 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     setCanUndo(history?.canUndo() ?? false);
     setCanRedo(history?.canRedo() ?? false);
   }, []);
+
+  /**
+   * Everything the scene holds, tombstones included.
+   *
+   * `ordered()` is for painting and for snapshots, which drop deleted shapes.
+   * The room needs the tombstone too: without it, a peer that was offline when
+   * the shape was erased would bring it back on reconnect.
+   */
+  const collabElements = useCallback((): Element[] => {
+    const scene = sceneRef.current;
+    return scene ? [...scene.snapshot().values()] : [];
+  }, []);
+
+  const pushCollab = useCallback(() => {
+    collabTimerRef.current = null;
+    collabRef.current?.push(collabElements());
+  }, [collabElements]);
+
+  const scheduleCollabPush = useCallback(() => {
+    if (!collabRef.current || roleRef.current === "viewer") return;
+    if (collabTimerRef.current !== null) return;
+    collabTimerRef.current = setTimeout(pushCollab, COLLAB_PUSH_MS);
+  }, [pushCollab]);
 
   const handleReady = useCallback(
     (ctx: CanvasRenderingContext2D, size: SurfaceSize) => {
@@ -292,6 +364,9 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
         onRender: () => {
           syncOverlays();
           scheduleRender();
+          // A live stroke is already in the scene while it is being drawn, so
+          // this is what lets another person watch the line arrive.
+          scheduleCollabPush();
         },
         onSceneChange: () => {
           reindex();
@@ -299,6 +374,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
           refreshHistory();
           scheduleSave();
           scheduleRender();
+          scheduleCollabPush();
         },
         onSelectionChange: refreshSelection,
         onCreateText: (element) => setEditingId(element.id),
@@ -314,10 +390,23 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
       scheduleRender();
       setReady(true);
     },
-    [initial, reindex, refreshHistory, refreshSelection, refreshStats, scheduleRender, scheduleSave, syncOverlays],
+    [
+      initial,
+      reindex,
+      refreshHistory,
+      refreshSelection,
+      refreshStats,
+      scheduleCollabPush,
+      scheduleRender,
+      scheduleSave,
+      syncOverlays,
+    ],
   );
 
   const changeTool = useCallback((next: Tool) => {
+    // A viewer link may pan and zoom, never pick up a pen. The toolbar is
+    // hidden, but a keyboard shortcut or a stale tool must not get through.
+    if (roleRef.current === "viewer" && next !== "hand") return;
     toolRef.current = next;
     setTool(next);
     const controller = controllerRef.current;
@@ -362,7 +451,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
    * each one is added or updated in place.
    */
   const adoptElements = useCallback(
-    (elements: readonly Element[]) => {
+    (elements: readonly Element[], removed: readonly string[] = []) => {
       const scene = sceneRef.current;
       if (!scene) return;
 
@@ -372,10 +461,23 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
         if (!current) {
           scene.add(element);
           changed = true;
-        } else if (current.updatedAt !== element.updatedAt) {
-          scene.update(element.id, element);
+        } else if (
+          current.updatedAt !== element.updatedAt ||
+          current.version !== element.version
+        ) {
+          // `restore`, not `update`: the incoming copy is already stamped, and
+          // re-stamping it here would make this device look like the author of
+          // someone else's edit and start an update ping-pong.
+          scene.restore(element);
           changed = true;
         }
+      }
+
+      for (const id of removed) {
+        const current = scene.get(id);
+        if (!current || current.isDeleted) continue;
+        scene.remove(id);
+        changed = true;
       }
 
       if (!changed) return;
@@ -417,10 +519,117 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     scheduleRender();
   }, [boardId, scheduleRender]);
 
-  // A phone opens with the pen: "select" on a blank board is a dead tap.
+  // A phone opens with the pen: "select" on a blank board is a dead tap. A
+  // viewer link instead opens with the hand, because watching is all it may do.
   useEffect(() => {
     if (window.matchMedia("(pointer: coarse)").matches) changeTool("freedraw");
   }, [changeTool]);
+
+  useEffect(() => {
+    if (role === "viewer" && toolRef.current !== "hand") changeTool("hand");
+  }, [changeTool, role]);
+
+  /**
+   * Live collaboration, second after the board is on screen.
+   *
+   * Account first, because the socket token route checks ownership. The durable
+   * snapshot is merged before the room starts: the first sync then carries one
+   * coherent document instead of racing two half-merged ones.
+   *
+   * Everything here is optional. No account, no token, no secret: the board is
+   * exactly the offline notepad it was a moment ago.
+   */
+  useEffect(() => {
+    if (!ready) return;
+
+    let cancelled = false;
+    let session: CollabSession | null = null;
+
+    (async () => {
+      try {
+        await useAccountStore.getState().refresh().catch(() => undefined);
+        if (cancelled) return;
+
+        const state = useAccountStore.getState();
+        const signedIn = Boolean(accountUser());
+        if (!shareToken && !signedIn) return;
+
+        // A room needs a registered board. Registering keeps the id already in
+        // the address bar, so every link made before sign-in stays valid.
+        if (!shareToken) {
+          const meta = await loadMeta(boardId).catch(() => null);
+          const scene = sceneRef.current;
+          const registered = await ensureServerBoard({
+            boardId,
+            title: meta?.title ?? defaultTitle(boardId),
+            elements: scene ? [...scene.snapshot().values()] : [],
+          }).catch((error: unknown) => {
+            console.warn("PenPaper: could not register this notepad with your account", error);
+            return null;
+          });
+          if (cancelled) return;
+          // Null means another account owns this id; this device keeps drawing
+          // locally but must not join that board's room.
+          if (!registered) return;
+
+          roleRef.current = registered;
+          setRole(registered);
+        }
+
+        const pulled = await pullServerBoard(boardId, shareToken).catch((error: unknown) => {
+          console.warn("PenPaper: could not read the saved notepad", error);
+          return null;
+        });
+        if (cancelled) return;
+
+        if (pulled) {
+          // A link decides the role every time it is opened, so a revoked or
+          // downgraded invitation takes effect on reconnect.
+          if (shareToken) {
+            roleRef.current = pulled.role;
+            setRole(pulled.role);
+          }
+
+          const scene = sceneRef.current;
+          const local = scene ? [...scene.snapshot().values()] : [];
+          const { elements, changed } = mergeServerElements(local, pulled.elements);
+          if (changed) adoptElements(elements);
+        }
+
+        if (!state.collab) return;
+
+        const { CollabSession } = await import("@/lib/collab/session");
+        if (cancelled) return;
+
+        session = new CollabSession({
+          boardId,
+          shareToken,
+          guestId: guestId(),
+          getElements: collabElements,
+          onRemote: (elements, removed) => adoptElements(elements, removed),
+          onPeers: (next) => setPeers(next),
+          onStatus: (status) => setLiveStatus(status),
+        });
+        collabRef.current = session;
+        await session.start();
+      } catch (error) {
+        // Live is a bonus. A board must never fail to open because a room did.
+        console.warn("PenPaper: live collaboration could not start", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (collabTimerRef.current !== null) {
+        clearTimeout(collabTimerRef.current);
+        collabTimerRef.current = null;
+      }
+      session?.stop();
+      if (collabRef.current === session) collabRef.current = null;
+      setPeers([]);
+      setLiveStatus("offline");
+    };
+  }, [adoptElements, boardId, collabElements, ready, shareToken]);
 
   /**
    * Opening a board also reconciles it.
@@ -501,23 +710,35 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
   // A hidden tab may be closed without another chance to write, and iOS often
   // kills backgrounded pages outright; flush while the document is still alive.
   useEffect(() => {
-    const onVisibilityChange = () => {
-      if (document.visibilityState !== "hidden") return;
+    const flushEverything = () => {
       flushSave();
-      // Queued Drive pushes run now: a backgrounded tab is often closed before
-      // its debounce fires, and the board would stay unsynced until opened.
-      void flushSyncQueue();
+      // A queued stroke must reach the room before the tab sleeps, and the
+      // durable snapshot must follow it out.
+      if (collabTimerRef.current !== null) {
+        clearTimeout(collabTimerRef.current);
+        collabTimerRef.current = null;
+        collabRef.current?.push(collabElements());
+      }
     };
 
-    window.addEventListener("pagehide", flushSave);
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "hidden") return;
+      flushEverything();
+      // Queued Drive and account pushes run now: a backgrounded tab is often
+      // closed before its debounce fires, and the board would stay unsynced.
+      void flushSyncQueue();
+      if (roleRef.current !== "viewer") void flushServerSync();
+    };
+
+    window.addEventListener("pagehide", flushEverything);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
-      window.removeEventListener("pagehide", flushSave);
+      window.removeEventListener("pagehide", flushEverything);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      flushSave();
+      flushEverything();
     };
-  }, [flushSave]);
+  }, [collabElements, flushSave]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -528,6 +749,10 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
       ) {
         return;
       }
+
+      // A viewer has no pen, no history, and nothing to delete. Panning and
+      // zooming still work through the pointer, which needs no keys.
+      if (roleRef.current === "viewer") return;
 
       const key = event.key.toLowerCase();
 
@@ -569,12 +794,25 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [changeTool, deleteSelection, redo, undo]);
 
+  /**
+   * The camera for peers' cursors.
+   *
+   * Read on every animation frame rather than mirrored into state: panning must
+   * move other people's pointers without re-rendering this board's chrome.
+   */
+  const getCamera = useCallback(
+    (): Camera => controllerRef.current?.getCamera() ?? IDENTITY_CAMERA,
+    [],
+  );
+
   const onPointerDown = useCallback((input: PointerInput) => {
     controllerRef.current?.pointerDown(input);
   }, []);
 
   const onPointerMove = useCallback((input: PointerInput) => {
     controllerRef.current?.pointerMove(input);
+    const camera = controllerRef.current?.getCamera();
+    if (camera) collabRef.current?.cursor(screenToScene(camera, input));
   }, []);
 
   const onPointerUp = useCallback((input: PointerInput) => {
@@ -583,10 +821,12 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
 
   const onPointerCancel = useCallback(() => {
     controllerRef.current?.pointerCancel();
+    collabRef.current?.cursor(null);
   }, []);
 
   const onPointerLeave = useCallback(() => {
     controllerRef.current?.pointerLeave();
+    collabRef.current?.cursor(null);
   }, []);
 
   const onWheel = useCallback((input: WheelInput) => {
@@ -701,6 +941,10 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
       data-board-id={boardId}
       data-ready={ready}
       data-elements={elementCount}
+      data-role={role ?? "local"}
+      data-readonly={readOnly}
+      data-live={liveStatus}
+      data-peers={people}
       style={{ background: "var(--surface-lowest)" }}
     >
       <BoardSurface
@@ -714,7 +958,7 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
         onWheel={onWheel}
       />
 
-      {editingElement ? (
+      {editingElement && !readOnly ? (
         <TextEditorOverlay
           element={editingElement}
           camera={controllerRef.current?.getCamera() ?? IDENTITY_CAMERA}
@@ -725,6 +969,8 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
           onCancel={() => setEditingId(null)}
         />
       ) : null}
+
+      <PeerCursors peers={peers} getCamera={getCamera} />
 
       <BoardChrome
         boardId={boardId}
@@ -757,6 +1003,19 @@ export function BoardScreen({ boardId, initial }: BoardScreenProps) {
           onExport: exportPng,
           onReset: resetCanvas,
         }}
+        role={role}
+        readOnly={readOnly}
+        peers={people}
+        liveStatus={liveStatus}
+        onShare={() => setShareOpen(true)}
+      />
+
+      <ShareDialog
+        boardId={boardId}
+        role={role}
+        open={shareOpen}
+        peers={people}
+        onClose={() => setShareOpen(false)}
       />
     </main>
   );

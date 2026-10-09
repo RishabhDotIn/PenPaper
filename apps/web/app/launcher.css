@@ -230,6 +230,13 @@
   align-items: center;
 }
 
+/* The account row inside the chooser, separated from the actions by a hairline
+   rather than a card: it is one more way in, not a second panel. */
+.launch-account-slot {
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--on-surface) 9%, transparent);
+}
+
 .launch-primary,
 .launch-connect {
   display: inline-flex;

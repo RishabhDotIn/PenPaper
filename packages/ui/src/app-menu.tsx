@@ -49,12 +49,19 @@ export interface AppMenuProps {
   layout: CanvasLayout;
   onLayoutChange: (layout: CanvasLayout) => void;
   onExport: () => void;
-  onReset: () => void;
+  onReset?: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
   /** Identity and Drive state, pinned above the notepad list. */
+  /** Opens the share card. Omitted when this deployment has no accounts. */
+  onShare?: () => void;
+  /** A guest through a share link can watch but not edit. */
+  readOnly?: boolean;
+  /** Live room state, shown under the account block. */
+  liveStatus?: "offline" | "connecting" | "online";
+  liveCount?: number;
   account?: ReactNode;
   /**
    * The device's notepads, rendered as a second view inside the same popover.
@@ -111,6 +118,10 @@ export function AppMenu({
   canUndo,
   canRedo,
   account,
+  onShare,
+  readOnly,
+  liveStatus,
+  liveCount,
   notepads,
   onOpenNotepad,
   onNewNotepad,
@@ -467,6 +478,23 @@ export function AppMenu({
             <div className="pp-menu-view">
               {account ? <div className="pp-menu-account">{account}</div> : null}
 
+              {liveStatus === "online" || liveStatus === "connecting" ? (
+                <p className="pp-menu-note pp-menu-live" data-state={liveStatus}>
+                  <span
+                    className="pp-sync-dot"
+                    data-tone={liveStatus === "online" ? "ok" : "idle"}
+                    aria-hidden="true"
+                  />
+                  <span>
+                    {liveStatus === "connecting"
+                      ? "Connecting…"
+                      : (liveCount ?? 1) > 1
+                        ? `Live · ${liveCount} people here`
+                        : "Live · you are here"}
+                  </span>
+                </p>
+              ) : null}
+
               {notepads ? (
                 <button
                   type="button"
@@ -477,6 +505,22 @@ export function AppMenu({
                   <ShelfIcon />
                   <span>All notepads</span>
                   <span className="pp-menu-count">{notepads.length}</span>
+                </button>
+              ) : null}
+
+              {onShare ? (
+                <button
+                  type="button"
+                  className="pp-menu-item"
+                  data-testid="open-share"
+                  onClick={() => {
+                    onShare();
+                    close();
+                  }}
+                >
+                  <ShareIcon />
+                  <span>Share</span>
+                  {readOnly ? <span className="pp-menu-count">View</span> : null}
                 </button>
               ) : null}
 
@@ -610,21 +654,23 @@ export function AppMenu({
                 <span>Export PNG</span>
               </button>
 
-              <button
-                type="button"
-                className="pp-menu-item pp-menu-danger"
-                onClick={() => {
-                  if (!confirmReset) {
-                    setConfirmReset(true);
-                    return;
-                  }
-                  onReset();
-                  close();
-                }}
-              >
-                <TrashIcon />
-                <span>{confirmReset ? "Tap again to clear" : "Reset canvas"}</span>
-              </button>
+              {onReset ? (
+                <button
+                  type="button"
+                  className="pp-menu-item pp-menu-danger"
+                  onClick={() => {
+                    if (!confirmReset) {
+                      setConfirmReset(true);
+                      return;
+                    }
+                    onReset();
+                    close();
+                  }}
+                >
+                  <TrashIcon />
+                  <span>{confirmReset ? "Tap again to clear" : "Reset canvas"}</span>
+                </button>
+              ) : null}
             </div>
           )}
         </div>
@@ -676,6 +722,17 @@ function ShelfIcon(): ReactElement {
       <path d="M13.5 5.5h6v13h-6z" />
       <path d="M7.5 9.5h0.01" />
       <path d="M7.5 13h0.01" />
+    </svg>
+  );
+}
+
+function ShareIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <circle cx="17.5" cy="6" r="2.5" />
+      <circle cx="6.5" cy="12" r="2.5" />
+      <circle cx="17.5" cy="18" r="2.5" />
+      <path d="m8.8 10.8 6.4-3.5M8.8 13.2l6.4 3.5" />
     </svg>
   );
 }

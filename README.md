@@ -3,7 +3,8 @@
 An infinite whiteboard that keeps up with a pen, a finger, or a mouse. It is
 local-first: every stroke is written to the device immediately, the board
 reopens exactly where you left it, and the installed app keeps working when the
-network does not.
+network does not. Sign in and the same notepads follow you to every device; a
+share link puts other people on the same canvas, live.
 
 **Live demo:** _deployment pending — see [Deploying](#deploying)._
 
@@ -13,15 +14,15 @@ network does not.
 
 Opening `/` returns to the notepad you were last in. A device that has not
 opened one yet gets a single card on paper: recent notepads, a blank page, and —
-once an account is connected — everything Drive holds. The hamburger carries the
-account and the full notepad list, where a notepad can be opened, renamed,
-deleted, or synced without leaving the canvas.
+once you sign in or connect Drive — everything your account holds. The hamburger
+carries the account and the full notepad list, where a notepad can be opened,
+renamed, deleted, or synced without leaving the canvas.
 
 ![The one-time chooser](docs/screenshots/penpaper-launcher.png)
 
 ![The board menu, with the account and the notepad list](docs/screenshots/penpaper-menu-notepads.png)
 
-## What works today (Phase 1)
+## What works today
 
 - **Infinite canvas** with scroll-to-pan, pinch-to-zoom, and a cached grid.
 - **Freehand drawing** with pressure-sensitive strokes (Perfect Freehand), palm
@@ -83,12 +84,27 @@ deleted, or synced without leaving the canvas.
   notepads appear on every device, stored as JSON files in a visible `PenPaper`
   folder. Auto-sync can be switched to per-notepad control, which adds a Sync /
   Remove from Drive action to each row. The browser talks to Drive directly with
-  an hour-long token: no backend, no secret, no refresh token. Setup is one
-  public client ID — see [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md). Without
-  it, the app stays local-only.
+  an hour-long token: no Drive backend, no client secret, no refresh token. Setup
+  is one public client ID — see [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md).
+  Without it, the app stays local-only.
+- **Accounts, one library.** Sign up with an email and a password and the
+  notepads you own are listed from anywhere, newest first, alongside the copies
+  on the device and in Drive. One account's notepads are one shelf; opening a
+  notepad on a second device pulls it, merges it element by element, and keeps
+  the workspace you already have offline.
+- **Live collaboration through a share link.** Mint a link from the menu with
+  one of three roles: **owner** (only the account), **editor**, or **viewer**.
+  An editor draws alongside you at stroke speed with their name and colour on
+  their pointer; a viewer opens read-only — hand tool, no toolbar, no history,
+  no rename, no delete — and cannot write even if the client is tampered with.
+  Both roles are enforced on the REST routes and on the socket. Links are live
+  until replaced or revoked, are returned once and stored only as a SHA-256
+  hash, and a room seeds itself from the first client's full document, so a
+  reload, a tunnel, or a closed laptop costs nothing. Edits are whole elements
+  merged by `updatedAt`, so two people drawing different shapes never conflict,
+  and deletions travel as tombstones so an offline peer cannot resurrect one.
 
-Not yet: real-time collaboration, image upload, and arrow binding. Those are the
-next phases in
+Not yet: image upload and arrow binding. Those are the next phases in
 [`docs/superpowers/specs/2026-10-31-penpaper-design.md`](docs/superpowers/specs/2026-10-31-penpaper-design.md).
 The canvas already uses the element model and tombstone semantics those phases
 require.
@@ -104,6 +120,9 @@ require.
 | Chrome | `@penpaper/ui`, plain CSS with the measured Excalidraw tokens |
 | Metadata state | Zustand 5.0 |
 | Device persistence | IndexedDB via `idb` 8.0 |
+| Accounts and boards | Postgres on Neon's free tier (`postgres` driver) |
+| Live rooms | Socket.IO 4.8 + Yjs 13.6 in the same Node process |
+| Session tokens | Hand-rolled scrypt + SHA-256 session rows; HS256 room JWT (`jose`) |
 | Tests | Vitest 5 (unit), Playwright 1.64 (browser) |
 | Host | Render free web service, no card |
 
@@ -115,24 +134,51 @@ pnpm --filter web dev          # http://localhost:3000
 ```
 
 `/` opens the notepad this device last opened. Until one has been opened, it
-shows the chooser: recent notepads, a new blank page, and the Drive list once an
-account is connected. `/b/local` and `/b/<id>` open a board directly. Deleting
-the remembered notepad clears the memory rather than opening an empty board
-under a dead id.
+shows the chooser: recent notepads, a new blank page, and the account and Drive
+lists once you are connected. `/b/local` and `/b/<id>` open a board directly, and
+`/s/<token>` is what a share link points at. Deleting the remembered notepad
+clears the memory rather than opening an empty board under a dead id.
+
+### Accounts and live rooms
+
+Both are optional. With no environment set the app is the offline notepad it has
+always been, and the menu says so. To turn them on, copy
+[`apps/web/.env.example`](apps/web/.env.example) to `apps/web/.env.local` and
+fill in:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Postgres (Neon free tier). Users, sessions, boards, and share links. |
+| `PENPAPER_SECRET` | At least 32 random characters. Signs the five-minute room token. |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Optional public OAuth client for Drive. |
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Use that command, not a remembered phrase, for `PENPAPER_SECRET`. Neon's
+connection string must use `sslmode=require`; `channel_binding=require` is
+rejected by the driver. The schema creates itself on the first request, so there
+is no migration step.
 
 Google Drive sync stays off until `apps/web/.env.local` contains a public OAuth
 client ID. See [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md); without it the
 app is fully local and says so on the launcher and in the menu.
+
+`pnpm --filter web dev` runs `server/main.mjs`, a small Node server that mounts
+Next and Socket.IO in one process. `next dev` alone serves the pages but no
+rooms, which is why live collaboration needs the wrapper.
 
 Use `localhost`, not `127.0.0.1`: Next's dev-server cross-origin rules treat the
 two as different origins and hydration silently stops.
 
 ```bash
 pnpm -r typecheck
-pnpm -r test                    # engine unit tests + storage/store tests
+pnpm -r test                    # engine + web unit tests
 pnpm --filter web build
-pnpm --filter web start         # production server on :3000
+pnpm --filter web start         # production Node server + rooms on :3000
 pnpm --filter web check:bundle  # board-route gzip budget
+pnpm --filter web check:db      # Neon connectivity and schema status
 ```
 
 Browser tests:
@@ -152,11 +198,11 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 
 | Metric | Result | Gate |
 | --- | --- | --- |
-| Engine unit tests | 207 passing | all green |
-| Web unit tests | 67 passing | all green |
+| Engine unit tests | 218 passing | all green |
+| Web unit tests | 70 passing | all green |
 | Browser tests | 45 passing | all green |
-| Median renderer frame body, 1,000 mixed shapes | 7.4–9.3 ms production | ≤ 16 ms |
-| Board route transfer, gzip | 183.2 KiB JS + CSS | ≤ 220 kB |
+| Median renderer frame body, 1,000 mixed shapes | 8.4 ms (up to 11.4 under a full parallel run) | ≤ 16 ms |
+| Board route transfer, gzip | 193.5 KiB JS + CSS | ≤ 220 kB |
 
 The frame measurement is the renderer's own body (cull, layout, paint commands),
 not `requestAnimationFrame` deltas, which are clamped to the display refresh rate
@@ -166,19 +212,34 @@ excludes `nomodule` polyfills that modern browsers never download.
 ## Deploying
 
 The app is a standard Node server (`next build` + `next start`), which is what
-Render's free tier runs. No Vercel-specific APIs are used.
+Render's free tier runs. No Vercel-specific APIs are used. Socket.IO upgrades
+share the same HTTP server, so live rooms need no second service and no extra
+instance-hours.
 
 1. Push this repository to GitHub.
-2. In Render, choose **New → Blueprint** and select the repository. The included
+2. Create a free Postgres project at [neon.tech](https://neon.tech) and copy its
+   pooled connection string. This single database holds users, sessions,
+   notepads, and share links; the schema creates itself on first request.
+3. In Render, choose **New → Blueprint** and select the repository. The included
    [`render.yaml`](render.yaml) creates a free web service with the right build
-   and start commands.
-3. Optional but recommended for Drive sync: set
-   `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in the service's environment and add the
-   Render origin under **Authorized JavaScript origins** for that OAuth client.
-   See [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md). `NEXT_PUBLIC_*` values
-   are inlined at build time, so redeploy after changing it.
-4. Open `/` on each device. Android Chrome and desktop browsers offer
-   **Install app**; the manifest and icons are already in place.
+   and start commands, and declares `DATABASE_URL` and `PENPAPER_SECRET` as
+   dashboard-set secrets.
+4. Set `DATABASE_URL` to the Neon string. Set `PENPAPER_SECRET` to at least 32
+   random bytes — `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+   It signs the five-minute room token only; rotating it invalidates in-flight
+   room tokens, not existing sessions.
+5. Optional for Drive sync: set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in the service's
+   environment and add the Render origin under **Authorized JavaScript origins**
+   for that OAuth client. See [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md).
+   `NEXT_PUBLIC_*` values are inlined at build time, so redeploy after changing
+   it.
+6. Open `/` on each device, sign up once, and the library follows. Android Chrome
+   and desktop browsers offer **Install app**; the manifest and icons are
+   already in place.
+
+With no `DATABASE_URL` and no `PENPAPER_SECRET` the deployment is still a
+working local-first whiteboard: accounts and sharing are simply absent, and
+`/api/auth/me` reports `configured: false`. Drive is independent of both.
 
 The free instance sleeps after 15 minutes of inactivity and takes ~60 s to wake.
 The board itself renders from IndexedDB before any network work, so a sleeping
@@ -191,10 +252,12 @@ variable `PENPAPER_URL` to enable it.
 ### ₹0 constraints
 
 The project is built to stay free without a card: Render free (512 MB, 0.1 CPU,
-WebSockets, 750 instance-hours), no paid object storage, no managed database in
-Phase 1, and no expiring trial. Image upload was deferred instead of adding a
-storage bill. Collaboration in Phase 3 keeps the same Node process and adds a
-free Postgres instance only if the host's free tier still satisfies that rule.
+WebSockets, 750 instance-hours), Neon free Postgres, no paid object storage, and
+no expiring trial. Live rooms run inside the one web process, so collaboration
+does not buy a second instance. Neon's free plan suspends an idle project; the
+first query after a quiet spell can take a second, and the API answers as
+"signed out" rather than failing the page while it wakes. Image upload was
+deferred instead of adding a storage bill.
 
 ## Devices
 

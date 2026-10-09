@@ -1,4 +1,5 @@
 import { SCENE_VERSION } from "@penpaper/engine";
+import type { BoardSummary, Role } from "@/lib/collab/api";
 import type { RemoteBoard } from "@/lib/drive/api";
 import { createDemoElements } from "@/lib/demo-board";
 import {
@@ -23,50 +24,98 @@ export interface ShelfItem {
   updatedAt: number;
   /** Live elements on this device, or -1 when the board has never been opened here. */
   elementCount: number;
-  source: "local" | "remote" | "both";
+  source: "local" | "remote" | "server" | "both";
   driveFileId?: string;
+  /** Chosen for Drive's library, which is what the toggle in the menu edits. */
   inLibrary: boolean;
+  /** Also saved to this person's PenPaper account. */
+  server: boolean;
+  /** This caller's role on the server copy, when there is one. */
+  role?: Role;
   syncedAt?: number;
 }
 
+/**
+ * One list from three places.
+ *
+ * A notepad can exist on this device, in Drive, in the account, or in any
+ * combination, and the person should see it once. The map is keyed by the board
+ * id all three already share, so merging is a lookup rather than a name match.
+ */
 export function buildShelf(
   local: readonly BoardMeta[],
   remote: readonly RemoteBoard[],
+  server: readonly BoardSummary[] = [],
 ): ShelfItem[] {
-  const remoteById = new Map(remote.map((board) => [board.boardId, board]));
-  const items: ShelfItem[] = [];
+  const byId = new Map<string, ShelfItem>();
 
   for (const meta of local) {
-    const board = remoteById.get(meta.id);
-    remoteById.delete(meta.id);
-    items.push({
+    byId.set(meta.id, {
       id: meta.id,
-      title: board?.title || meta.title,
-      // Two clocks: the device's and Drive's. The newer of the two is what the
-      // person means by "last edited", and it keeps the order stable when one
-      // device's clock runs ahead.
-      updatedAt: Math.max(meta.updatedAt, board ? Date.parse(board.modifiedTime) || 0 : 0),
+      title: meta.title,
+      updatedAt: meta.updatedAt,
       elementCount: meta.elementCount,
-      source: board ? "both" : "local",
-      driveFileId: board?.fileId ?? meta.driveFileId,
-      inLibrary: Boolean(board || meta.driveFileId || meta.inLibrary),
+      source: "local",
+      driveFileId: meta.driveFileId,
+      inLibrary: Boolean(meta.driveFileId || meta.inLibrary),
+      server: false,
       syncedAt: meta.syncedAt,
     });
   }
 
-  for (const board of remoteById.values()) {
-    items.push({
+  for (const board of remote) {
+    const modified = Date.parse(board.modifiedTime) || 0;
+    const item = byId.get(board.boardId);
+    if (item) {
+      // Two clocks: the device's and Drive's. The newer of the two is what the
+      // person means by "last edited", and it keeps the order stable when one
+      // device's clock runs ahead.
+      item.updatedAt = Math.max(item.updatedAt, modified);
+      item.title = board.title || item.title;
+      item.source = "both";
+      item.driveFileId = board.fileId;
+      item.inLibrary = true;
+      continue;
+    }
+
+    byId.set(board.boardId, {
       id: board.boardId,
       title: board.title,
-      updatedAt: Date.parse(board.modifiedTime) || 0,
+      updatedAt: modified,
       elementCount: -1,
       source: "remote",
       driveFileId: board.fileId,
       inLibrary: true,
+      server: false,
     });
   }
 
-  return items.sort((a, b) => b.updatedAt - a.updatedAt);
+  for (const board of server) {
+    const item = byId.get(board.id);
+    if (item) {
+      // The device knows how many shapes are actually here; the server summary
+      // is the fallback for a notepad this device has never opened.
+      item.updatedAt = Math.max(item.updatedAt, board.updatedAt);
+      item.title = board.title || item.title;
+      if (item.elementCount < 0) item.elementCount = board.elementCount;
+      item.server = true;
+      item.role = board.role;
+      continue;
+    }
+
+    byId.set(board.id, {
+      id: board.id,
+      title: board.title,
+      updatedAt: board.updatedAt,
+      elementCount: board.elementCount,
+      source: "server",
+      inLibrary: false,
+      server: true,
+      role: board.role,
+    });
+  }
+
+  return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 const DEMO_FLAG = "penpaper:demo-seeded:v1";

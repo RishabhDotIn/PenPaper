@@ -86,9 +86,11 @@ test.describe("launcher", () => {
     await expect(page).toHaveURL(/\/b\/[^/]+$/);
     await expectBoard(page);
 
-    // The list contains both notepads and marks the one being edited.
+    // The list contains both notepads and marks the one being edited. The
+    // IndexedDB read is fast, but the whole suite runs in parallel and a cold
+    // Postgres wake can stretch the first seconds of a board; 5 s is tight.
     const rows = await openNotepads(page);
-    await expect(rows.locator(".pp-notepad")).toHaveCount(2);
+    await expect(rows.locator(".pp-notepad")).toHaveCount(2, { timeout: 15_000 });
     await expect(rows.locator('.pp-notepad[aria-current="true"]')).toHaveCount(1);
   });
 

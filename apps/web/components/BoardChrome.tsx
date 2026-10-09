@@ -14,6 +14,9 @@ import { createElement, type StyleDefaults, type Tool } from "@penpaper/engine";
 import type { Element, ElementType } from "@penpaper/shared";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AccountPanel } from "@/components/AccountPanel";
+import { useAccountStore } from "@/lib/collab/account";
+import type { Role } from "@/lib/collab/api";
 import { driveConfigured, requestSession, signOut } from "@/lib/drive/auth";
 import { describeSync } from "@/lib/drive/status";
 import {
@@ -62,6 +65,12 @@ export interface BoardChromeProps {
   /** A drawing tool is active, so there is a "next element" to style. */
   isCreating: boolean;
   menu: BoardMenuProps;
+  /** This caller's role on the server copy, or null for a local-only board. */
+  role: Role | null;
+  readOnly: boolean;
+  peers: number;
+  liveStatus: "offline" | "connecting" | "online";
+  onShare: () => void;
 }
 
 /**
@@ -91,8 +100,14 @@ export function BoardChrome({
   onStyleDefaultsChange,
   isCreating,
   menu,
+  role,
+  readOnly,
+  peers,
+  liveStatus,
+  onShare,
 }: BoardChromeProps) {
   const router = useRouter();
+  const accountsConfigured = useAccountStore((state) => state.configured);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popoverMounted, setPopoverMounted] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -106,7 +121,7 @@ export function BoardChrome({
   const sync = describeSync(Boolean(session), phase, lastSyncedAt, notice);
   const notepads = useNotepads();
 
-  const showStyle = selection.length > 0 || isCreating;
+  const showStyle = !readOnly && (selection.length > 0 || isCreating);
 
   // Keep the card mounted for the length of its exit animation; unmounting on
   // the same frame the user taps outside makes it disappear rather than leave.
@@ -260,7 +275,7 @@ export function BoardChrome({
 
   const configured = driveConfigured();
 
-  const account = (
+  const driveCard = (
     <div className="pp-account">
       {session ? (
         <>
@@ -279,7 +294,9 @@ export function BoardChrome({
             <CloudIcon />
           </span>
           <span className="pp-account-copy">
-            <span className="pp-account-name">On this device</span>
+            {/* "On this device" belongs to the PenPaper account row above. This
+                card is specifically the Google connection, so name it. */}
+            <span className="pp-account-name">Google Drive</span>
             <span className="pp-account-mail">
               {configured ? "Connect to open from Drive" : "Drive is not set up here"}
             </span>
@@ -304,6 +321,18 @@ export function BoardChrome({
     </div>
   );
 
+  const accountNode = (
+    <div className="pp-account-stack">
+      <AccountPanel
+        variant="menu"
+        onChanged={() => {
+          void notepads.refreshRemote();
+        }}
+      />
+      {driveCard}
+    </div>
+  );
+
   return (
     <>
       <AppMenu
@@ -313,14 +342,21 @@ export function BoardChrome({
         canUndo={canUndo}
         canRedo={canRedo}
         autoSync={menu.autoSync}
-        onAutoSyncChange={session ? menu.onAutoSyncChange : undefined}
-        account={account}
+        onAutoSyncChange={session && !readOnly ? menu.onAutoSyncChange : undefined}
+        account={accountNode}
+        onShare={accountsConfigured || role ? onShare : undefined}
+        readOnly={readOnly}
+        liveStatus={liveStatus}
+        liveCount={peers}
+        onReset={readOnly ? undefined : menu.onReset}
         notepads={entries}
         onOpenNotepad={openNotepad}
         onNewNotepad={() => void startNotepad()}
-        onRenameNotepad={renameNotepad}
-        onDeleteNotepad={removeNotepad}
-        onToggleDriveNotepad={session ? toggleDriveNotepad : undefined}
+        // A viewer may open other notepads, but must not rename or delete this
+        // one from a link that grants no ownership.
+        onRenameNotepad={readOnly ? undefined : renameNotepad}
+        onDeleteNotepad={readOnly ? undefined : removeNotepad}
+        onToggleDriveNotepad={session && !readOnly ? toggleDriveNotepad : undefined}
         onNotepadsOpen={openNotepads}
         syncNote={
           <>
@@ -329,6 +365,7 @@ export function BoardChrome({
           </>
         }
         trailing={
+          readOnly ? undefined : (
           <button
             type="button"
             className="pp-menu-button pp-menu-style"
@@ -340,10 +377,12 @@ export function BoardChrome({
           >
             <PaletteIcon />
           </button>
+          )
         }
       />
 
-      <div className="pp-history" data-testid="history-controls" role="group" aria-label="History">
+      {readOnly ? null : (
+        <div className="pp-history" data-testid="history-controls" role="group" aria-label="History">
         <button
           type="button"
           className="pp-history-button"
@@ -371,8 +410,9 @@ export function BoardChrome({
           </svg>
         </button>
       </div>
+      )}
 
-      <Toolbar value={tool} onChange={onToolChange} />
+      {readOnly ? null : <Toolbar value={tool} onChange={onToolChange} />}
 
       {showStyle ? (
         <div className={`pp-panel-dock${panelOpen ? " is-open" : ""}`}>
