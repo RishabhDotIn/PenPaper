@@ -153,7 +153,7 @@ export function AccountPanel({ variant = "menu", onChanged }: AccountPanelProps)
         <span className="pp-account-copy">
           <span className="pp-account-name">On this device</span>
           <span className="pp-account-mail">
-            {phase === "loading" ? "Checking your account…" : "Sync across devices"}
+            {phase === "loading" ? "Checking your account…" : "Saved on this device"}
           </span>
         </span>
         <button

@@ -108,6 +108,7 @@ export function BoardChrome({
 }: BoardChromeProps) {
   const router = useRouter();
   const accountsConfigured = useAccountStore((state) => state.configured);
+  const accountUser = useAccountStore((state) => state.user);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popoverMounted, setPopoverMounted] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -304,11 +305,9 @@ export function BoardChrome({
             <CloudIcon />
           </span>
           <span className="pp-account-copy">
-            {/* "On this device" belongs to the PenPaper account row above. This
-                card is specifically the Google connection, so name it. */}
             <span className="pp-account-name">Google Drive</span>
             <span className="pp-account-mail">
-              {configured ? "Connect to open from Drive" : "Drive is not set up here"}
+              {!configured ? "Drive is not set up here" : "Keep a copy in Drive"}
             </span>
           </span>
           <button
@@ -339,7 +338,11 @@ export function BoardChrome({
           void notepads.refreshRemote();
         }}
       />
-      {driveCard}
+      {/* Drive is a second copy for a signed-in library, not a second way in.
+          Asking for it before someone has an account reads as another sign-up.
+          On a deployment without accounts there is nothing to sign in to, so
+          Drive stays available on its own. */}
+      {!accountsConfigured || accountUser ? driveCard : null}
     </div>
   );
 
@@ -368,11 +371,15 @@ export function BoardChrome({
         onDeleteNotepad={readOnly ? undefined : removeNotepad}
         onToggleDriveNotepad={session && !readOnly ? toggleDriveNotepad : undefined}
         onNotepadsOpen={openNotepads}
+        // Only a live connection has something to say. Signed out, or with no
+        // Drive row in sight, "Not connected to Drive" is noise.
         syncNote={
-          <>
-            <span className="pp-sync-dot" data-tone={sync.tone} aria-hidden="true" />
-            <span>{sync.label}</span>
-          </>
+          session ? (
+            <>
+              <span className="pp-sync-dot" data-tone={sync.tone} aria-hidden="true" />
+              <span>{sync.label}</span>
+            </>
+          ) : undefined
         }
         trailing={
           readOnly ? undefined : (
