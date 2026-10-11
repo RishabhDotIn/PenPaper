@@ -279,13 +279,23 @@ export function BoardChrome({
     <div className="pp-account">
       {session ? (
         <>
-          <AccountAvatar picture={session.account.picture} name={session.account.name} small />
+          {/* Deliberately not the avatar: this row is the Drive connection, and
+              the same Google address is already on the PenPaper row above.
+              Two identical rows with two "Sign out" buttons read as a bug. */}
+          <span className="pp-account-avatar pp-account-avatar-fallback" aria-hidden="true">
+            <CloudIcon />
+          </span>
           <span className="pp-account-copy">
-            <span className="pp-account-name">{session.account.name}</span>
+            <span className="pp-account-name">Google Drive</span>
             <span className="pp-account-mail">{session.account.email}</span>
           </span>
-          <button type="button" className="pp-account-action" onClick={disconnect}>
-            Sign out
+          <button
+            type="button"
+            className="pp-account-action"
+            data-testid="menu-disconnect-drive"
+            onClick={disconnect}
+          >
+            Disconnect
           </button>
         </>
       ) : (
@@ -458,36 +468,6 @@ export function BoardChrome({
         ) : null}
       </div>
     </>
-  );
-}
-
-function AccountAvatar({
-  picture,
-  name,
-  small,
-}: {
-  picture: string;
-  name: string;
-  small?: boolean;
-}) {
-  const size = small ? 28 : 32;
-
-  if (picture) {
-    // One request, not a page of them: a remote avatar does not need next/image.
-    return (
-      <img
-        className="pp-account-avatar"
-        src={picture}
-        alt=""
-        width={size}
-        height={size}
-      />
-    );
-  }
-  return (
-    <span className="pp-account-avatar pp-account-avatar-fallback" aria-hidden="true">
-      {name.slice(0, 1).toUpperCase()}
-    </span>
   );
 }
 
