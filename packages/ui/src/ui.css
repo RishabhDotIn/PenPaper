@@ -1572,7 +1572,9 @@
   gap: 6px;
 }
 
-.pp-auth-form {
+/* The Google button is an iframe we cannot restyle, so the slot around it
+   carries the material: same inner surface as the old form, one control. */
+.pp-google {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1582,61 +1584,35 @@
   background: var(--surface-low);
 }
 
-.pp-auth-field {
+.pp-google-button {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--on-surface-muted);
-  font-size: 11px;
-  line-height: 1.3;
+  justify-content: center;
+  min-height: 40px;
 }
 
-.pp-auth-field input {
-  min-height: 38px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  color: var(--on-surface);
-  background: var(--surface-mid);
-  font: inherit;
-  font-size: 13px;
+/* While GIS loads, and when it fails, the slot is still a calm empty line
+   rather than a jump in the menu's height. */
+.pp-google-button[data-state="loading"]::before {
+  content: "";
+  width: 260px;
+  height: 40px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--on-surface) 8%, transparent);
+  animation: pp-pulse 1.2s ease-in-out infinite;
 }
 
-.pp-auth-field input:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
+.pp-google-button[data-state="failed"] {
+  display: none;
 }
 
-.pp-auth-submit {
-  min-height: 38px;
-  border: 0;
-  border-radius: 10px;
-  color: var(--on-primary);
-  background: var(--primary);
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 120ms var(--ease-out), background-color 120ms ease;
-}
-
-.pp-auth-submit:active:not(:disabled) {
-  transform: scale(0.98);
-}
-
-.pp-auth-submit:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.pp-auth-switch {
-  min-height: 32px;
-  border: 0;
-  color: var(--primary);
-  background: none;
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
+@keyframes pp-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .pp-auth-hint {
@@ -1644,13 +1620,6 @@
   color: var(--on-surface-muted);
   font-size: 11px;
   line-height: 1.45;
-}
-
-@media (pointer: coarse) {
-  .pp-auth-field input,
-  .pp-auth-submit {
-    min-height: 44px;
-  }
 }
 
 /* The share card. Same material, same arrival, a backdrop because it owns the

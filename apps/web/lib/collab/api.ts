@@ -14,6 +14,7 @@ export interface Account {
   id: string;
   email: string;
   name: string;
+  picture?: string | null;
 }
 
 export interface AccountState {
@@ -93,16 +94,17 @@ export function fetchAccount(): Promise<AccountState> {
   return request<AccountState>("/api/auth/me");
 }
 
-export function signUp(input: {
-  email: string;
-  password: string;
-  name: string;
-}): Promise<{ user: Account }> {
-  return request("/api/auth/sign-up", { method: "POST", body: JSON.stringify(input) });
-}
-
-export function signIn(input: { email: string; password: string }): Promise<{ user: Account }> {
-  return request("/api/auth/sign-in", { method: "POST", body: JSON.stringify(input) });
+/**
+ * Signs in with a Google ID token.
+ *
+ * The credential comes from the GIS button, not from this module: the popup has
+ * to open inside a click, and only the button knows when that happened.
+ */
+export function signInWithGoogle(credential: string): Promise<{ user: Account }> {
+  return request("/api/auth/google", {
+    method: "POST",
+    body: JSON.stringify({ credential }),
+  });
 }
 
 export function signOut(): Promise<{ ok: true }> {

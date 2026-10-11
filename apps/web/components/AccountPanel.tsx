@@ -1,21 +1,23 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/collab/api";
 import { useAccountStore } from "@/lib/collab/account";
+import { googleClientId, googleConfigured, googleId, loadGisScript } from "@/lib/google/gis";
 
 /**
  * The PenPaper account row.
  *
  * Same component in the launcher and the board menu: one place decides what a
  * signed-out person sees, and one place knows how to turn a failed sign-in into
- * a sentence. The form is inline rather than a modal because it is two fields
- * and a button; a dialog over a dialog would only add a backdrop.
+ * a sentence. Google is the only door — there is no password to invent, reset,
+ * or leak — and its own button is used rather than a lookalike, because that
+ * button is the one Google's popup trusts for a user gesture.
  */
 
 export interface AccountPanelProps {
   variant?: "menu" | "launcher";
-  /** Called after a successful sign-in or sign-up, once the store has the user. */
+  /** Called after a successful sign-in, once the store has the user. */
   onChanged?: () => void;
 }
 
@@ -23,26 +25,106 @@ export function AccountPanel({ variant = "menu", onChanged }: AccountPanelProps)
   const user = useAccountStore((state) => state.user);
   const configured = useAccountStore((state) => state.configured);
   const phase = useAccountStore((state) => state.phase);
-  const signIn = useAccountStore((state) => state.signIn);
-  const signUp = useAccountStore((state) => state.signUp);
+  const signInWithGoogle = useAccountStore((state) => state.signInWithGoogle);
   const signOut = useAccountStore((state) => state.signOut);
 
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [slot, setSlot] = useState<"loading" | "ready" | "failed">("loading");
+
+  const targetRef = useRef<HTMLDivElement | null>(null);
+
+  // The popup hands back a credential when the person finishes. Kept in a ref
+  // so re-rendering the row (a new `onChanged` identity, a parent state change)
+  // never tears down and re-renders Google's iframe button.
+  const finish = useRef<(credential: string | undefined) => Promise<void>>(async () => {});
+  finish.current = async (credential) => {
+    if (!credential) {
+      setError("Google did not return a sign-in. Try again.");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithGoogle(credential);
+      setOpen(false);
+      onChanged?.();
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Could not sign in. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+
+    const target = targetRef.current;
+    if (!target) return;
+
+    let cancelled = false;
+    setSlot("loading");
+
+    void (async () => {
+      try {
+        if (!googleConfigured()) throw new Error("no client id");
+        await loadGisScript();
+
+        const api = googleId();
+        if (!api) throw new Error("no id api");
+        if (cancelled) return;
+
+        api.initialize({
+          client_id: googleClientId(),
+          ux_mode: "popup",
+          cancel_on_tap_outside: true,
+          callback: (response) => {
+            void finish.current(response.credential);
+          },
+        });
+
+        target.replaceChildren();
+        api.renderButton(target, {
+          type: "standard",
+          theme: "outline",
+          size: "large",
+          text: "continue_with",
+          shape: "pill",
+          logo_alignment: "left",
+          width: 260,
+        });
+
+        if (!cancelled) setSlot("ready");
+      } catch {
+        if (!cancelled) setSlot("failed");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   if (!configured) return null;
 
   if (user) {
     return (
       <div className="pp-account" data-testid="account-signed-in">
-        <span className="pp-account-avatar pp-account-avatar-fallback" aria-hidden="true">
-          {(user.name || user.email).slice(0, 1).toUpperCase()}
-        </span>
+        {user.picture ? (
+          <img
+            className="pp-account-avatar"
+            src={user.picture}
+            alt=""
+            referrerPolicy="no-referrer"
+            data-testid="account-avatar"
+          />
+        ) : (
+          <span className="pp-account-avatar pp-account-avatar-fallback" aria-hidden="true">
+            {(user.name || user.email).slice(0, 1).toUpperCase()}
+          </span>
+        )}
         <span className="pp-account-copy">
           <span className="pp-account-name">{user.name}</span>
           <span className="pp-account-mail">{user.email}</span>
@@ -51,6 +133,7 @@ export function AccountPanel({ variant = "menu", onChanged }: AccountPanelProps)
           type="button"
           className="pp-account-action"
           data-testid="account-sign-out"
+          disabled={busy}
           onClick={() => {
             void signOut().then(() => onChanged?.());
           }}
@@ -61,25 +144,6 @@ export function AccountPanel({ variant = "menu", onChanged }: AccountPanelProps)
     );
   }
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-
-    try {
-      if (mode === "sign-up") await signUp(name, email, password);
-      else await signIn(email, password);
-
-      setPassword("");
-      setOpen(false);
-      onChanged?.();
-    } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "Could not sign in. Try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="pp-auth" data-testid="account-signed-out">
       <div className="pp-account">
@@ -89,7 +153,7 @@ export function AccountPanel({ variant = "menu", onChanged }: AccountPanelProps)
         <span className="pp-account-copy">
           <span className="pp-account-name">On this device</span>
           <span className="pp-account-mail">
-            {phase === "loading" ? "Checking your account…" : "Sign in to sync your notepads"}
+            {phase === "loading" ? "Checking your account…" : "Sync across devices"}
           </span>
         </span>
         <button
@@ -97,6 +161,7 @@ export function AccountPanel({ variant = "menu", onChanged }: AccountPanelProps)
           className="pp-account-action pp-account-connect"
           data-testid="account-open"
           aria-expanded={open}
+          disabled={busy}
           onClick={() => {
             setOpen((value) => !value);
             setError(null);
@@ -107,47 +172,15 @@ export function AccountPanel({ variant = "menu", onChanged }: AccountPanelProps)
       </div>
 
       {open ? (
-        <form className="pp-auth-form" onSubmit={(event) => void submit(event)}>
-          {mode === "sign-up" ? (
-            <label className="pp-auth-field">
-              <span>Name</span>
-              <input
-                name="name"
-                autoComplete="name"
-                value={name}
-                maxLength={60}
-                onChange={(event) => setName(event.target.value)}
-                data-testid="account-name"
-              />
-            </label>
+        <div className="pp-google">
+          <div ref={targetRef} className="pp-google-button" data-state={slot} />
+
+          {slot === "failed" ? (
+            <p className="pp-account-error" role="alert">
+              Google sign-in could not start. Check that this site is listed under the client id&apos;s
+              authorized JavaScript origins.
+            </p>
           ) : null}
-
-          <label className="pp-auth-field">
-            <span>Email</span>
-            <input
-              name="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              data-testid="account-email"
-            />
-          </label>
-
-          <label className="pp-auth-field">
-            <span>Password</span>
-            <input
-              name="password"
-              type="password"
-              required
-              minLength={mode === "sign-up" ? 8 : 1}
-              autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              data-testid="account-password"
-            />
-          </label>
 
           {error ? (
             <p className="pp-account-error" role="alert">
@@ -155,33 +188,14 @@ export function AccountPanel({ variant = "menu", onChanged }: AccountPanelProps)
             </p>
           ) : null}
 
-          <button
-            type="submit"
-            className="pp-auth-submit"
-            disabled={busy}
-            data-testid="account-submit"
-          >
-            {busy
-              ? "One moment…"
-              : mode === "sign-up"
-                ? "Create account"
-                : "Sign in"}
-          </button>
-
-          <button
-            type="button"
-            className="pp-auth-switch"
-            onClick={() => {
-              setMode((current) => (current === "sign-in" ? "sign-up" : "sign-in"));
-              setError(null);
-            }}
-          >
-            {mode === "sign-in" ? "New here? Create an account" : "I already have an account"}
-          </button>
-        </form>
+          <p className="pp-auth-hint">
+            Your notepads follow you to every device you sign in on. Nothing is uploaded until you
+            sign in.
+          </p>
+        </div>
       ) : null}
 
-      {variant === "launcher" ? (
+      {variant === "launcher" && !open ? (
         <p className="pp-auth-hint">
           An account keeps one library on every device. PenPaper still saves locally when you are
           signed out.

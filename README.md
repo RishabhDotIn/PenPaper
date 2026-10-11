@@ -87,11 +87,14 @@ renamed, deleted, or synced without leaving the canvas.
   an hour-long token: no Drive backend, no client secret, no refresh token. Setup
   is one public client ID — see [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md).
   Without it, the app stays local-only.
-- **Accounts, one library.** Sign up with an email and a password and the
-  notepads you own are listed from anywhere, newest first, alongside the copies
-  on the device and in Drive. One account's notepads are one shelf; opening a
-  notepad on a second device pulls it, merges it element by element, and keeps
-  the workspace you already have offline.
+- **One Google account, one library.** Sign in with Google and the notepads you
+  own are listed from anywhere, newest first, alongside the copies on the device
+  and in Drive. There is no password to invent, reset, or leak: the browser gets
+  a signed ID token from Google Identity Services and the server checks it
+  against Google's published keys, so no client secret is involved either. One
+  account's notepads are one shelf; opening a notepad on a second device pulls
+  it, merges it element by element, and keeps the workspace you already have
+  offline.
 - **Live collaboration through a share link.** Mint a link from the menu with
   one of three roles: **owner** (only the account), **editor**, or **viewer**.
   An editor draws alongside you at stroke speed with their name and colour on
@@ -122,7 +125,7 @@ require.
 | Device persistence | IndexedDB via `idb` 8.0 |
 | Accounts and boards | Postgres on Neon's free tier (`postgres` driver) |
 | Live rooms | Socket.IO 4.8 + Yjs 13.6 in the same Node process |
-| Session tokens | Hand-rolled scrypt + SHA-256 session rows; HS256 room JWT (`jose`) |
+| Session tokens | Google ID token verified with `jose`; random 32-byte sessions stored as SHA-256; HS256 room JWT |
 | Tests | Vitest 5 (unit), Playwright 1.64 (browser) |
 | Host | Render free web service, no card |
 
@@ -150,7 +153,7 @@ fill in:
 | --- | --- |
 | `DATABASE_URL` | Postgres (Neon free tier). Users, sessions, boards, and share links. |
 | `PENPAPER_SECRET` | At least 32 random characters. Signs the five-minute room token. |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Optional public OAuth client for Drive. |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Public OAuth client. Required for sign-in; also used for Drive. |
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -161,9 +164,12 @@ connection string must use `sslmode=require`; `channel_binding=require` is
 rejected by the driver. The schema creates itself on the first request, so there
 is no migration step.
 
-Google Drive sync stays off until `apps/web/.env.local` contains a public OAuth
-client ID. See [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md); without it the
-app is fully local and says so on the launcher and in the menu.
+Sign-in and Drive share one **Web application** OAuth client. In Google Cloud
+Console, add `http://localhost:3000` and the deployed origin under **Authorized
+JavaScript origins**. There is no client secret and no redirect URI: the browser
+gets a token from Google and the server verifies it, so the origin allowlist is
+the only thing standing between the button and a working sign-in. Without the
+client id, accounts stay off and the menu offers Drive only.
 
 `pnpm --filter web dev` runs `server/main.mjs`, a small Node server that mounts
 Next and Socket.IO in one process. `next dev` alone serves the pages but no
@@ -202,7 +208,7 @@ Recorded on the Asus TUF F15 (Windows 11, Chromium, 1440 × 900):
 | Web unit tests | 70 passing | all green |
 | Browser tests | 45 passing | all green |
 | Median renderer frame body, 1,000 mixed shapes | 8.4 ms (up to 11.4 under a full parallel run) | ≤ 16 ms |
-| Board route transfer, gzip | 193.5 KiB JS + CSS | ≤ 220 kB |
+| Board route transfer, gzip | 193.7 KiB JS + CSS | ≤ 220 kB |
 
 The frame measurement is the renderer's own body (cull, layout, paint commands),
 not `requestAnimationFrame` deltas, which are clamped to the display refresh rate
@@ -228,14 +234,14 @@ instance-hours.
    random bytes — `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
    It signs the five-minute room token only; rotating it invalidates in-flight
    room tokens, not existing sessions.
-5. Optional for Drive sync: set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in the service's
-   environment and add the Render origin under **Authorized JavaScript origins**
-   for that OAuth client. See [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md).
-   `NEXT_PUBLIC_*` values are inlined at build time, so redeploy after changing
-   it.
-6. Open `/` on each device, sign up once, and the library follows. Android Chrome
-   and desktop browsers offer **Install app**; the manifest and icons are
-   already in place.
+5. Set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in the service's environment and add the
+   Render origin under **Authorized JavaScript origins** for that OAuth client.
+   It powers both Google sign-in and Drive. See
+   [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md). `NEXT_PUBLIC_*` values are
+   inlined at build time, so redeploy after changing it.
+6. Open `/` on each device, sign in with Google once, and the library follows.
+   Android Chrome and desktop browsers offer **Install app**; the manifest and
+   icons are already in place.
 
 With no `DATABASE_URL` and no `PENPAPER_SECRET` the deployment is still a
 working local-first whiteboard: accounts and sharing are simply absent, and

@@ -2,9 +2,8 @@ import { create } from "zustand";
 import {
   ApiError,
   fetchAccount,
-  signIn as apiSignIn,
+  signInWithGoogle as apiSignInWithGoogle,
   signOut as apiSignOut,
-  signUp as apiSignUp,
   type Account,
 } from "./api";
 
@@ -26,8 +25,8 @@ export interface AccountStoreState {
   error: string | null;
 
   refresh(): Promise<void>;
-  signIn(email: string, password: string): Promise<void>;
-  signUp(name: string, email: string, password: string): Promise<void>;
+  /** Takes the ID token Google's button returned. */
+  signInWithGoogle(credential: string): Promise<void>;
   signOut(): Promise<void>;
 }
 
@@ -72,13 +71,8 @@ export const useAccountStore = create<AccountStoreState>((set, get) => ({
     return inFlight;
   },
 
-  signIn: async (email, password) => {
-    const { user } = await apiSignIn({ email, password });
-    set({ user, phase: "ready", error: null });
-  },
-
-  signUp: async (name, email, password) => {
-    const { user } = await apiSignUp({ name, email, password });
+  signInWithGoogle: async (credential) => {
+    const { user } = await apiSignInWithGoogle(credential);
     set({ user, phase: "ready", error: null });
   },
 

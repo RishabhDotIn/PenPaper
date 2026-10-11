@@ -1,6 +1,7 @@
 import { currentUser } from "@/lib/server/auth";
 import { databaseConfigured } from "@/lib/server/db";
 import { collabConfigured } from "@/lib/server/collab-token";
+import { googleConfigured } from "@/lib/server/google";
 import { ok } from "@/lib/server/http";
 
 export const runtime = "nodejs";
@@ -10,9 +11,13 @@ export const runtime = "nodejs";
  *
  * `configured` is not the same as signed in: it tells the launcher whether to
  * offer a sign-in card at all, and the board whether live sharing can work.
+ * Both a database and a Google client id are required — either alone has
+ * nothing to offer.
  */
 export async function GET() {
-  if (!databaseConfigured) {
+  const configured = databaseConfigured && googleConfigured;
+
+  if (!configured) {
     return ok({ user: null, configured: false, collab: false });
   }
 

@@ -51,7 +51,7 @@ test.describe("launcher", () => {
     await expectBoard(page);
   });
 
-  test("the menu carries the account and the notepad list, with no manage page", async ({
+  test("the menu carries the notepad list and the Drive state, with no manage page", async ({
     page,
   }) => {
     await page.goto("/b/demo");
@@ -60,17 +60,14 @@ test.describe("launcher", () => {
     await page.getByTestId("app-menu-button").click();
     const menu = page.getByRole("dialog", { name: "Board menu" });
 
-    // Local-only is the default deployment, but a build can also carry a
-    // Google client id. Both are valid: without one the menu has to say so and
-    // refuse the click; with one the connect action must actually be live.
-    await expect(menu.getByText("On this device")).toBeVisible();
+    // The suite runs without a Google client id, so accounts are switched off:
+    // there is no sign-in row and the share action has nothing to open. Drive's
+    // own row still reports that it is unconfigured and refuses the click.
+    await expect(menu.getByTestId("account-signed-out")).toHaveCount(0);
+    await expect(menu.getByTestId("open-share")).toHaveCount(0);
     const connect = menu.getByTestId("menu-connect-drive");
-    if (await menu.getByText("Connect to open from Drive").isVisible()) {
-      await expect(connect).toBeEnabled();
-    } else {
-      await expect(menu.getByText("Drive is not set up here")).toBeVisible();
-      await expect(connect).toBeDisabled();
-    }
+    await expect(menu.getByText("Drive is not set up here")).toBeVisible();
+    await expect(connect).toBeDisabled();
 
     await menu.getByTestId("open-notepads").click();
     const list = menu.getByTestId("app-menu-notepads");

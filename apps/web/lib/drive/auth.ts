@@ -1,5 +1,7 @@
 "use client";
 
+import { googleClientId, loadGisScript } from "@/lib/google/gis";
+
 /**
  * Google sign-in, browser only.
  *
@@ -36,7 +38,6 @@ const SCOPES = `${IDENTITY_SCOPE} ${DRIVE_SCOPE}`;
 
 const TOKEN_KEY = "penpaper:drive:token:v1";
 const ACCOUNT_KEY = "penpaper:drive:account:v1";
-const GIS_SRC = "https://accounts.google.com/gsi/client";
 
 /** Refresh this long before Google's own expiry, so a save cannot race it. */
 const EXPIRY_MARGIN_MS = 60_000;
@@ -88,11 +89,10 @@ const listeners = new Set<() => void>();
 
 let session: DriveSession | null = null;
 let pending: Promise<DriveSession> | null = null;
-let script: Promise<void> | null = null;
 let restored = false;
 
 export function driveClientId(): string {
-  return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+  return googleClientId();
 }
 
 /**
@@ -192,33 +192,10 @@ function loadGis(): Promise<void> {
   if (typeof document === "undefined") {
     return Promise.reject(new DriveAuthError("No document", "unsupported"));
   }
-  if (window.google?.accounts?.oauth2) return Promise.resolve();
 
-  script ??= new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GIS_SRC}"]`);
-    const element = existing ?? document.createElement("script");
-
-    element.addEventListener("load", () => resolve(), { once: true });
-    element.addEventListener(
-      "error",
-      () => {
-        script = null;
-        // Leave no half-loaded tag behind: a retry must be able to load it.
-        element.remove();
-        reject(new DriveAuthError("Could not reach Google sign-in", "script-failed"));
-      },
-      { once: true },
-    );
-
-    if (!existing) {
-      element.src = GIS_SRC;
-      element.async = true;
-      element.defer = true;
-      document.head.append(element);
-    }
+  return loadGisScript().catch(() => {
+    throw new DriveAuthError("Could not reach Google sign-in", "script-failed");
   });
-
-  return script;
 }
 
 async function fetchAccount(token: string): Promise<DriveAccount> {
@@ -324,7 +301,6 @@ export function signOut(): void {
 export function __resetDriveAuthForTests(): void {
   session = null;
   pending = null;
-  script = null;
   restored = false;
   listeners.clear();
 }
