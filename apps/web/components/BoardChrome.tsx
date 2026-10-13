@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AccountPanel } from "@/components/AccountPanel";
 import { useAccountStore } from "@/lib/collab/account";
 import type { Role } from "@/lib/collab/api";
-import { driveConfigured, requestSession, signOut } from "@/lib/drive/auth";
+import { driveConfigured, requestSession } from "@/lib/drive/auth";
 import { describeSync } from "@/lib/drive/status";
 import {
   deleteBoardEverywhere,
@@ -269,20 +269,15 @@ export function BoardChrome({
     }
   }, [notepads]);
 
-  const disconnect = useCallback(() => {
-    signOut();
-    setConnectError(null);
-  }, []);
-
   const configured = driveConfigured();
 
   const driveCard = (
     <div className="pp-account">
       {session ? (
         <>
-          {/* Deliberately not the avatar: this row is the Drive connection, and
-              the same Google address is already on the PenPaper row above.
-              Two identical rows with two "Sign out" buttons read as a bug. */}
+          {/* No action here: the Drive token lives in this tab's session
+              storage, so closing the tab is the disconnect. A button would
+              only duplicate the account's own Sign out. */}
           <span className="pp-account-avatar pp-account-avatar-fallback" aria-hidden="true">
             <CloudIcon />
           </span>
@@ -290,14 +285,6 @@ export function BoardChrome({
             <span className="pp-account-name">Google Drive</span>
             <span className="pp-account-mail">{session.account.email}</span>
           </span>
-          <button
-            type="button"
-            className="pp-account-action"
-            data-testid="menu-disconnect-drive"
-            onClick={disconnect}
-          >
-            Disconnect
-          </button>
         </>
       ) : (
         <>

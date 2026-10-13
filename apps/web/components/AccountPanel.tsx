@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/collab/api";
 import { useAccountStore } from "@/lib/collab/account";
+import { signOut as disconnectDrive } from "@/lib/drive/auth";
 import { googleClientId, googleConfigured, googleId, loadGisScript } from "@/lib/google/gis";
 
 /**
@@ -135,7 +136,12 @@ export function AccountPanel({ variant = "menu", onChanged }: AccountPanelProps)
           data-testid="account-sign-out"
           disabled={busy}
           onClick={() => {
-            void signOut().then(() => onChanged?.());
+            void signOut().then(() => {
+              // The Drive row is hidden once signed out, so leaving its token
+              // alive would mean syncing with no way to see or stop it.
+              disconnectDrive();
+              onChanged?.();
+            });
           }}
         >
           Sign out
