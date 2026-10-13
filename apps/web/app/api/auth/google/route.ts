@@ -1,21 +1,21 @@
 import { createSession, setSessionCookie, signInWithGoogle } from "@/lib/server/auth";
 import { databaseConfigured } from "@/lib/server/db";
-import { googleConfigured, verifyGoogleCredential } from "@/lib/server/google";
+import { googleConfigured, verifyGoogleAccessToken } from "@/lib/server/google";
 import { allow, clientKey, fail, ok, readJson } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 
 interface Body {
-  credential?: unknown;
+  accessToken?: unknown;
 }
 
 /**
  * The only way to sign in.
  *
- * The browser gets a signed ID token from Google Identity Services and posts
- * it here. Verification is local (Google's public keys), so there is no client
- * secret and no token exchange on every sign-in; the session that comes back
- * is PenPaper's own cookie.
+ * The browser runs one Google consent and posts the access token here. The
+ * server asks Google who it belongs to and checks the audience, then answers
+ * with PenPaper's own session cookie. The same token stays in the tab for
+ * Drive, which is why signing in does not need a second popup later.
  */
 export async function POST(request: Request) {
   if (!databaseConfigured || !googleConfigured) {
@@ -26,13 +26,13 @@ export async function POST(request: Request) {
   }
 
   const body = await readJson<Body>(request);
-  const credential = typeof body?.credential === "string" ? body.credential : "";
-  // A JWT is small. Anything larger is not a credential we issued a popup for.
-  if (credential.length < 20 || credential.length > 8_192) {
+  const accessToken = typeof body?.accessToken === "string" ? body.accessToken.trim() : "";
+  // Google's tokens are a few hundred bytes. Anything larger is not one.
+  if (accessToken.length < 20 || accessToken.length > 4_096) {
     return fail(400, "Sign-in did not complete. Try again.");
   }
 
-  const identity = await verifyGoogleCredential(credential);
+  const identity = await verifyGoogleAccessToken(accessToken);
   if (!identity) return fail(401, "Google could not confirm that sign-in");
 
   let user;

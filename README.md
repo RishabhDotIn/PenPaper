@@ -89,12 +89,12 @@ renamed, deleted, or synced without leaving the canvas.
   Without it, the app stays local-only.
 - **One Google account, one library.** Sign in with Google and the notepads you
   own are listed from anywhere, newest first, alongside the copies on the device
-  and in Drive. There is no password to invent, reset, or leak: the browser gets
-  a signed ID token from Google Identity Services and the server checks it
-  against Google's published keys, so no client secret is involved either. One
-  account's notepads are one shelf; opening a notepad on a second device pulls
-  it, merges it element by element, and keeps the workspace you already have
-  offline.
+  and in Drive. There is no password to invent, reset, or leak. A single consent
+  asks for the address and for Drive at the same time, so one sign-in connects
+  both; the server confirms the token with Google, so no client secret is
+  involved either. One account's notepads are one shelf; opening a notepad on a
+  second device pulls it, merges it element by element, and keeps the workspace
+  you already have offline.
 - **Live collaboration through a share link.** Mint a link from the menu with
   one of three roles: **owner** (only the account), **editor**, or **viewer**.
   An editor draws alongside you at stroke speed with their name and colour on
@@ -125,7 +125,7 @@ require.
 | Device persistence | IndexedDB via `idb` 8.0 |
 | Accounts and boards | Postgres on Neon's free tier (`postgres` driver) |
 | Live rooms | Socket.IO 4.8 + Yjs 13.6 in the same Node process |
-| Session tokens | Google ID token verified with `jose`; random 32-byte sessions stored as SHA-256; HS256 room JWT |
+| Session tokens | Google access token checked with Google's tokeninfo; random 32-byte sessions stored as SHA-256; HS256 room JWT |
 | Tests | Vitest 5 (unit), Playwright 1.64 (browser) |
 | Host | Render free web service, no card |
 

@@ -95,15 +95,16 @@ export function fetchAccount(): Promise<AccountState> {
 }
 
 /**
- * Signs in with a Google ID token.
+ * Signs in with the access token from the one Google consent.
  *
- * The credential comes from the GIS button, not from this module: the popup has
- * to open inside a click, and only the button knows when that happened.
+ * The token is the same one Drive keeps: Google confirms it belongs to this
+ * client id and hands back the identity, so the account exists before the
+ * Drive half is stored.
  */
-export function signInWithGoogle(credential: string): Promise<{ user: Account }> {
+export function signInWithGoogle(accessToken: string): Promise<{ user: Account }> {
   return request("/api/auth/google", {
     method: "POST",
-    body: JSON.stringify({ credential }),
+    body: JSON.stringify({ accessToken }),
   });
 }
 

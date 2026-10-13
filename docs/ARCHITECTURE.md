@@ -262,7 +262,7 @@ hint. The API surface is:
 
 | Route | Purpose |
 | --- | --- |
-| `POST /api/auth/google`, `sign-out` | Google ID token, then PenPaper's session cookie |
+| `POST /api/auth/google`, `sign-out` | Google access token, then PenPaper's session cookie |
 | `GET /api/auth/me` | who is here, and whether accounts/rooms are configured |
 | `GET/POST /api/boards` | the account's library; register a device notepad |
 | `GET/PUT/DELETE /api/boards/<id>` | one snapshot, its role, its title |
@@ -350,13 +350,15 @@ silently does nothing when no account is connected.
 **No server for Drive.** The browser uses Google Identity Services' token
 model: a popup returns an access token valid for about an hour. The token lives
 in `sessionStorage`, so it dies with the tab; the account name and picture live
-in `localStorage` so the board menu can show who is connected and reconnect in
-one tap. There is no client secret, no refresh token, and no Drive traffic
-through PenPaper's server; the account database described above is separate and
-optional. The only Drive configuration is the public
-`NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+in `localStorage` so the board menu can show who is connected. A returning tab
+renews it with `prompt=none`, so the connection comes back without a click, and
+only a revoked grant falls back to a Connect button. There is no client secret,
+no refresh token, and no Drive traffic through PenPaper's server; the account
+database described above is separate and optional. The only Drive configuration
+is the public `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
-**Scope.** `drive.file` plus `openid email profile`. `drive.file` is
+**Scope.** `drive.file` plus `openid email profile`. One consent asks for all
+three, so signing in connects Drive in the same popup. `drive.file` is
 non-sensitive: the app sees the files it created, not the rest of the user's
 Drive, and it does not trigger the restricted-scope security assessment.
 
@@ -444,14 +446,15 @@ signature check.
 
 Google is the only way in, and there is no password anywhere in the system.
 
-- The browser renders Google's own button (Google Identity Services). A click
-  opens Google's popup and returns an ID token — a short-lived JWT signed by
-  Google.
-- `/api/auth/google` verifies that JWT locally with `jose` against Google's
-  published keys, checking issuer, audience (the public client id), and a
-  verified email. No client secret, no code exchange, no call to Google per
-  sign-in. Rejections are a single 401 sentence, because every failure means the
-  same thing to the person in front of the screen.
+- One consent does both jobs. Google's token client opens a single popup asking
+  for `openid email profile` and `drive.file`, and returns an access token. The
+  account and the Drive connection therefore arrive together, and a returning
+  tab renews the Drive half silently with `prompt=none`.
+- `/api/auth/google` asks Google's `tokeninfo` endpoint what the token means,
+  then checks the audience (the public client id), the subject, and a verified
+  email. No client secret, no code exchange, and no JWT keys to cache. Rejections
+  are a single 401 sentence, because every failure means the same thing to the
+  person in front of the screen.
 - The user row is keyed by Google's stable `sub`, so changing a Google address
   keeps the library. A row created before Google-only sign-in is adopted when
   the verified address matches, then the password column is dropped.

@@ -5,16 +5,19 @@ import { googleClientId, loadGisScript } from "@/lib/google/gis";
 /**
  * Google sign-in, browser only.
  *
- * PenPaper has no backend to hold a secret or a refresh token, and it does not
- * want one: a static app on a free host can make Drive calls with a short-lived
- * access token that Google's Identity Services hands to the page. The token
- * lives an hour, is scoped to files this app created (`drive.file`), and is
- * never sent anywhere except googleapis.com.
+ * One consent covers both jobs: the popup asks for an identity (`openid email
+ * profile`) and for file access (`drive.file`), so a new account arrives with
+ * its Drive connection already granted. Asking twice made the menu look like
+ * two sign-ups.
+ *
+ * PenPaper has no backend secret and no refresh token: the page gets a
+ * short-lived access token from Google Identity Services, sends it once to
+ * `/api/auth/google` so the server can confirm who it belongs to, and keeps it
+ * for Drive calls. It is scoped to files this app created.
  *
  * Two storage decisions worth knowing:
  *  - The token sits in `sessionStorage`, so it dies with the tab and a new tab
- *    asks once. A long-lived bearer token in `localStorage` would outlive the
- *    session that authorised it.
+ *    renews it silently (Google already knows the grant).
  *  - The account's name and picture sit in `localStorage`, no secret in them,
  *    so the shelf can say "Connected as Ada" and offer one tap to reconnect.
  */
@@ -60,6 +63,20 @@ interface GoogleTokenResponse {
   error_description?: string;
 }
 
+/**
+ * What the consent popup returned, before anything is stored.
+ *
+ * The token may carry fewer scopes than asked for: Google lets a person
+ * untick a permission, and a personal-info box cannot be crossed off but a
+ * Drive one can. Callers that need Drive must check `grantHasDrive`.
+ */
+export interface GoogleGrant {
+  token: string;
+  expiresAt: number;
+  account: DriveAccount;
+  scopes: string[];
+}
+
 interface TokenClient {
   requestAccessToken: (overrides?: { prompt?: string }) => void;
 }
@@ -89,6 +106,7 @@ const listeners = new Set<() => void>();
 
 let session: DriveSession | null = null;
 let pending: Promise<DriveSession> | null = null;
+let popup: Promise<GoogleGrant> | null = null;
 let restored = false;
 
 export function driveClientId(): string {
@@ -224,7 +242,77 @@ async function fetchAccount(token: string): Promise<DriveAccount> {
  * `silent` renews from a grant this browser already gave. Google answers
  * without any UI, or fails at once with `interaction_required`, which is the
  * signal to show a Connect button instead.
+ *
+ * Nothing is stored here: the grant is returned so the caller can sign in
+ * first, and only then keep the Drive half.
  */
+export function requestGrant(options: { silent?: boolean } = {}): Promise<GoogleGrant> {
+  if (!driveConfigured()) {
+    return Promise.reject(new DriveAuthError("Google is not configured", "no-client-id"));
+  }
+
+  // Two quick taps must not open two popups. A silent attempt has no popup to
+  // share, so it never has to join one.
+  if (options.silent) return takeGrant(options);
+
+  popup ??= takeGrant(options).finally(() => {
+    popup = null;
+  });
+  return popup;
+}
+
+async function takeGrant(options: { silent?: boolean; scope?: string }): Promise<GoogleGrant> {
+  await loadGis();
+  const oauth2 = window.google?.accounts?.oauth2;
+  if (!oauth2) throw new DriveAuthError("Google sign-in did not load", "script-failed");
+
+  // A renewal asking only for Drive cannot read the profile from Google, but
+  // the name and address are already on this device from the first consent.
+  const remembered = options.scope === DRIVE_SCOPE ? rememberedAccount() : null;
+
+  const response = await new Promise<GoogleTokenResponse>((resolve, reject) => {
+    const client = oauth2.initTokenClient({
+      client_id: driveClientId(),
+      scope: options.scope ?? SCOPES,
+      // Only the scopes asked for here: a token that also carries whatever
+      // this Google project was granted elsewhere is broader than we need.
+      include_granted_scopes: false,
+      callback: resolve,
+      error_callback: (error) =>
+        reject(new DriveAuthError(error.message ?? "Sign-in failed", error.type ?? "error")),
+    });
+    client.requestAccessToken(options.silent ? { prompt: "none" } : undefined);
+  });
+
+  if (response.error || !response.access_token) {
+    throw new DriveAuthError(
+      response.error_description ?? response.error ?? "Sign-in was cancelled",
+      response.error ?? "error",
+    );
+  }
+
+  return {
+    token: response.access_token,
+    expiresAt: Date.now() + (response.expires_in ?? 3600) * 1000,
+    account: remembered ?? (await fetchAccount(response.access_token)),
+    scopes: (response.scope ?? "").split(" ").filter(Boolean),
+  };
+}
+
+/** A grant only becomes a session if Google actually left the Drive scope on. */
+export function adoptSession(grant: GoogleGrant): DriveSession | null {
+  if (!grant.scopes.includes(DRIVE_SCOPE)) return null;
+
+  const next: DriveSession = {
+    token: grant.token,
+    expiresAt: grant.expiresAt,
+    account: grant.account,
+  };
+  persist(next);
+  return next;
+}
+
+/** The existing session, or a fresh one that can call Drive. */
 export function requestSession(options: { silent?: boolean } = {}): Promise<DriveSession> {
   if (!driveConfigured()) {
     return Promise.reject(new DriveAuthError("Google Drive is not configured", "no-client-id"));
@@ -232,48 +320,32 @@ export function requestSession(options: { silent?: boolean } = {}): Promise<Driv
   const live = getSession();
   if (live) return Promise.resolve(live);
 
-  // Two quick taps must not open two popups.
-  if (pending) return pending;
+  // A silent renewal and a press of Connect are different intentions; only the
+  // visible one is shared, so a press during a renewal still opens a popup.
+  if (options.silent) return requireDrive(silentGrant());
 
-  pending = (async () => {
-    await loadGis();
-    const oauth2 = window.google?.accounts?.oauth2;
-    if (!oauth2) throw new DriveAuthError("Google sign-in did not load", "script-failed");
-
-    const response = await new Promise<GoogleTokenResponse>((resolve, reject) => {
-      const client = oauth2.initTokenClient({
-        client_id: driveClientId(),
-        scope: SCOPES,
-        // Only the scopes asked for here: a token that also carries whatever
-        // this Google project was granted elsewhere is broader than we need.
-        include_granted_scopes: false,
-        callback: resolve,
-        error_callback: (error) =>
-          reject(new DriveAuthError(error.message ?? "Sign-in failed", error.type ?? "error")),
-      });
-      client.requestAccessToken(options.silent ? { prompt: "none" } : undefined);
-    });
-
-    if (response.error || !response.access_token) {
-      throw new DriveAuthError(
-        response.error_description ?? response.error ?? "Sign-in was cancelled",
-        response.error ?? "error",
-      );
-    }
-
-    const account = await fetchAccount(response.access_token);
-    const next: DriveSession = {
-      token: response.access_token,
-      expiresAt: Date.now() + (response.expires_in ?? 3600) * 1000,
-      account,
-    };
-    persist(next);
-    return next;
-  })();
-
-  return pending.finally(() => {
+  pending ??= requireDrive(requestGrant()).finally(() => {
     pending = null;
   });
+  return pending;
+}
+
+/**
+ * A returning tab has the account cookie already; it only needs the Drive
+ * half back. Asking for the identity scopes again would make a grant from the
+ * two-consent era look like it needs a new one.
+ */
+function silentGrant(): Promise<GoogleGrant> {
+  const remembered = rememberedAccount();
+  return takeGrant(remembered ? { silent: true, scope: DRIVE_SCOPE } : { silent: true });
+}
+
+async function requireDrive(grant: Promise<GoogleGrant>): Promise<DriveSession> {
+  const adopted = adoptSession(await grant);
+  if (!adopted) {
+    throw new DriveAuthError("Drive access was not granted", "scope-missing");
+  }
+  return adopted;
 }
 
 /** The existing session, or a fresh one. The caller must be a user gesture. */
@@ -305,6 +377,7 @@ export function signOut(): void {
 export function __resetDriveAuthForTests(): void {
   session = null;
   pending = null;
+  popup = null;
   restored = false;
   listeners.clear();
 }

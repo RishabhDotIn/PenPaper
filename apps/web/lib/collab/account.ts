@@ -25,8 +25,8 @@ export interface AccountStoreState {
   error: string | null;
 
   refresh(): Promise<void>;
-  /** Takes the ID token Google's button returned. */
-  signInWithGoogle(credential: string): Promise<void>;
+  /** Takes the access token from the single Google consent. */
+  signInWithGoogle(accessToken: string): Promise<void>;
   signOut(): Promise<void>;
 }
 
@@ -71,8 +71,8 @@ export const useAccountStore = create<AccountStoreState>((set, get) => ({
     return inFlight;
   },
 
-  signInWithGoogle: async (credential) => {
-    const { user } = await apiSignInWithGoogle(credential);
+  signInWithGoogle: async (accessToken) => {
+    const { user } = await apiSignInWithGoogle(accessToken);
     set({ user, phase: "ready", error: null });
   },
 
