@@ -220,8 +220,12 @@ async function fetchAccount(token: string): Promise<DriveAccount> {
 /**
  * The consent popup. Call this from a click — Google's token flow is a popup,
  * and browsers block popups that are not tied to a gesture.
+ *
+ * `silent` renews from a grant this browser already gave. Google answers
+ * without any UI, or fails at once with `interaction_required`, which is the
+ * signal to show a Connect button instead.
  */
-export function requestSession(): Promise<DriveSession> {
+export function requestSession(options: { silent?: boolean } = {}): Promise<DriveSession> {
   if (!driveConfigured()) {
     return Promise.reject(new DriveAuthError("Google Drive is not configured", "no-client-id"));
   }
@@ -247,7 +251,7 @@ export function requestSession(): Promise<DriveSession> {
         error_callback: (error) =>
           reject(new DriveAuthError(error.message ?? "Sign-in failed", error.type ?? "error")),
       });
-      client.requestAccessToken();
+      client.requestAccessToken(options.silent ? { prompt: "none" } : undefined);
     });
 
     if (response.error || !response.access_token) {

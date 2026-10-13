@@ -13,7 +13,7 @@ import {
 import { createElement, type StyleDefaults, type Tool } from "@penpaper/engine";
 import type { Element, ElementType } from "@penpaper/shared";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountPanel } from "@/components/AccountPanel";
 import { useAccountStore } from "@/lib/collab/account";
 import type { Role } from "@/lib/collab/api";
@@ -109,6 +109,7 @@ export function BoardChrome({
   const router = useRouter();
   const accountsConfigured = useAccountStore((state) => state.configured);
   const accountUser = useAccountStore((state) => state.user);
+  const accountPhase = useAccountStore((state) => state.phase);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popoverMounted, setPopoverMounted] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -268,6 +269,25 @@ export function BoardChrome({
       setBusy(null);
     }
   }, [notepads]);
+
+  // Google remembers the Drive grant even when this tab does not, so a fresh
+  // tab renews it with no popup instead of asking for Connect again. One
+  // attempt per session: if the grant is gone, the row keeps its button.
+  const silentDrive = useRef(false);
+  useEffect(() => {
+    if (accountsConfigured && !accountUser) {
+      // Signing out ends the Drive session; a later sign-in may try again.
+      silentDrive.current = false;
+      return;
+    }
+    // Wait for the account check: without it, a local-only deployment and a
+    // signed-out one look the same.
+    if (accountPhase === "idle" || accountPhase === "loading") return;
+    if (silentDrive.current || session || !driveConfigured()) return;
+
+    silentDrive.current = true;
+    void requestSession({ silent: true }).catch(() => undefined);
+  }, [accountPhase, accountsConfigured, accountUser, session]);
 
   const configured = driveConfigured();
 
