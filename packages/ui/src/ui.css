@@ -1572,47 +1572,41 @@
   gap: 6px;
 }
 
-/* The Google button is an iframe we cannot restyle, so the slot around it
-   carries the material: same inner surface as the old form, one control. */
-.pp-google {
+/* The one Google door. Ours rather than an iframe, because the token client
+   opens the popup itself; the mark keeps it recognisably Google. Tall enough
+   for a thumb, and full width so it reads as the row's action. */
+.pp-google-signin {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 6px;
-  padding: 10px;
-  border-radius: 12px;
-  background: var(--surface-low);
-}
-
-.pp-google-button {
-  display: flex;
+  align-items: center;
   justify-content: center;
-  min-height: 40px;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--on-surface) 16%, transparent);
+  border-radius: 12px;
+  color: var(--on-surface);
+  background: var(--surface-low);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 120ms var(--ease-out),
+    background-color 120ms ease;
 }
 
-/* While GIS loads, and when it fails, the slot is still a calm empty line
-   rather than a jump in the menu's height. */
-.pp-google-button[data-state="loading"]::before {
-  content: "";
-  width: 260px;
-  height: 40px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--on-surface) 8%, transparent);
-  animation: pp-pulse 1.2s ease-in-out infinite;
+.pp-google-signin:active:not(:disabled) {
+  transform: scale(0.985);
 }
 
-.pp-google-button[data-state="failed"] {
-  display: none;
-}
-
-@keyframes pp-pulse {
-  0%,
-  100% {
-    opacity: 0.55;
+@media (hover: hover) {
+  .pp-google-signin:hover:not(:disabled) {
+    background: var(--surface-mid);
   }
-  50% {
-    opacity: 1;
-  }
+}
+
+.pp-google-signin:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .pp-auth-hint {

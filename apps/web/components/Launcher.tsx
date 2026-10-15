@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AccountPanel } from "@/components/AccountPanel";
+import { useAccountStore } from "@/lib/collab/account";
 import { driveConfigured, requestSession } from "@/lib/drive/auth";
 import { syncLibrary } from "@/lib/drive/sync";
 import { useDriveSession } from "@/lib/drive/use-drive-session";
@@ -24,6 +25,9 @@ export function Launcher() {
   const router = useRouter();
   const session = useDriveSession();
   const { items, refreshLocal, refreshRemote, refreshServer } = useNotepads();
+  const accountsConfigured = useAccountStore((state) => state.configured);
+  const accountPhase = useAccountStore((state) => state.phase);
+  const accountUser = useAccountStore((state) => state.user);
 
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState<"new" | "connect" | null>(null);
@@ -86,6 +90,19 @@ export function Launcher() {
     void refreshRemote();
   }, [session, refreshRemote]);
 
+  // The token dies with the tab, the account cookie does not. Renew the Drive
+  // half quietly so the shelf is complete without asking anyone to sign in
+  // again. One attempt: if the grant is gone, the board menu offers Connect.
+  const triedSilent = useRef(false);
+  useEffect(() => {
+    if (accountPhase === "idle" || accountPhase === "loading") return;
+    if (session || !driveConfigured() || triedSilent.current) return;
+    if (accountsConfigured && !accountUser) return;
+
+    triedSilent.current = true;
+    void requestSession({ silent: true }).catch(() => undefined);
+  }, [accountPhase, accountsConfigured, accountUser, session]);
+
   const open = useCallback(
     (id: string) => {
       router.push(`/b/${id}`);
@@ -134,6 +151,11 @@ export function Launcher() {
   }
 
   const configured = driveConfigured();
+  // On a deployment with accounts, signing in is the only door: the same
+  // consent connects Drive. The standalone button is only for a deployment
+  // with no accounts at all, where Drive is the only identity there is. It
+  // waits for the account check so it cannot flash and then vanish.
+  const standaloneDrive = configured && !accountsConfigured && accountPhase === "ready";
   const recent = (items ?? []).slice(0, 6);
 
   return (
@@ -208,7 +230,7 @@ export function Launcher() {
             <span>{busy === "new" ? "Creating…" : "New notepad"}</span>
           </button>
 
-          {!session && configured ? (
+          {!session && standaloneDrive ? (
             <button
               type="button"
               className="launch-connect"
@@ -248,7 +270,7 @@ export function Launcher() {
               ? `${items.length - recent.length} more in the board menu`
               : "Saved on this device as you draw"}
           </span>
-          {session ? (
+          {session && !accountsConfigured ? (
             <span className="launch-account">
               {session.account.picture ? (
                 // eslint-disable-next-line @next/next/no-img-element -- one avatar, no optimizer.

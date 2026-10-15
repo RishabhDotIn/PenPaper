@@ -273,23 +273,40 @@ export function BoardChrome({
   // Google remembers the Drive grant even when this tab does not, so a fresh
   // tab renews it with no popup instead of asking for Connect again. One
   // attempt per session: if the grant is gone, the row keeps its button.
+  //
+  // While that attempt is in flight the Drive row stays hidden, because a
+  // Connect button that vanishes on its own is worse than a row that has not
+  // arrived yet. It starts hidden so the first frame after the account check
+  // cannot flash one either.
   const silentDrive = useRef(false);
+  const [restoringDrive, setRestoringDrive] = useState(true);
   useEffect(() => {
     if (accountsConfigured && !accountUser) {
       // Signing out ends the Drive session; a later sign-in may try again.
       silentDrive.current = false;
+      setRestoringDrive(false);
       return;
     }
     // Wait for the account check: without it, a local-only deployment and a
     // signed-out one look the same.
     if (accountPhase === "idle" || accountPhase === "loading") return;
-    if (silentDrive.current || session || !driveConfigured()) return;
+    if (session || !driveConfigured()) {
+      setRestoringDrive(false);
+      return;
+    }
+    if (silentDrive.current) return;
 
     silentDrive.current = true;
-    void requestSession({ silent: true }).catch(() => undefined);
+    setRestoringDrive(true);
+    void requestSession({ silent: true })
+      .catch(() => undefined)
+      .finally(() => setRestoringDrive(false));
   }, [accountPhase, accountsConfigured, accountUser, session]);
 
   const configured = driveConfigured();
+  // Drive work belongs to a row someone can see: an account above it, or a
+  // deployment where Drive is the only identity there is.
+  const driveReady = Boolean(session) && (!accountsConfigured || Boolean(accountUser));
 
   const driveCard = (
     <div className="pp-account">
@@ -345,11 +362,13 @@ export function BoardChrome({
           void notepads.refreshRemote();
         }}
       />
-      {/* Drive is a second copy for a signed-in library, not a second way in.
-          Asking for it before someone has an account reads as another sign-up.
-          On a deployment without accounts there is nothing to sign in to, so
-          Drive stays available on its own. */}
-      {!accountsConfigured || accountUser ? driveCard : null}
+      {/* One Google consent covers both: the account row signs in and asks for
+          Drive in the same popup. A Drive card here would repeat the name and
+          address that are already one line above, which reads as a second
+          login. It stays for the two cases where it is the only door: a
+          deployment with no accounts at all, and an account whose Google grant
+          came back without Drive. */}
+      {!accountsConfigured || (accountUser && !session && !restoringDrive) ? driveCard : null}
     </div>
   );
 
@@ -362,7 +381,7 @@ export function BoardChrome({
         canUndo={canUndo}
         canRedo={canRedo}
         autoSync={menu.autoSync}
-        onAutoSyncChange={session && !readOnly ? menu.onAutoSyncChange : undefined}
+        onAutoSyncChange={driveReady && !readOnly ? menu.onAutoSyncChange : undefined}
         account={accountNode}
         onShare={accountsConfigured || role ? onShare : undefined}
         readOnly={readOnly}
@@ -376,12 +395,13 @@ export function BoardChrome({
         // one from a link that grants no ownership.
         onRenameNotepad={readOnly ? undefined : renameNotepad}
         onDeleteNotepad={readOnly ? undefined : removeNotepad}
-        onToggleDriveNotepad={session && !readOnly ? toggleDriveNotepad : undefined}
+        onToggleDriveNotepad={driveReady && !readOnly ? toggleDriveNotepad : undefined}
         onNotepadsOpen={openNotepads}
-        // Only a live connection has something to say. Signed out, or with no
-        // Drive row in sight, "Not connected to Drive" is noise.
+        // Only a live connection with an account above it has something to
+        // say. Signed out, "Connected to Drive" would describe a row that is
+        // not on screen.
         syncNote={
-          session ? (
+          driveReady ? (
             <>
               <span className="pp-sync-dot" data-tone={sync.tone} aria-hidden="true" />
               <span>{sync.label}</span>
