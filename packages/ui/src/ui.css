@@ -18,12 +18,15 @@
 .pp-dock,
 .pp-menu-island,
 .pp-history,
+.pp-live-pill,
+.pp-live-pop,
 .pp-menu,
 .pp-panel,
 .pp-popover,
 .pp-shape-menu,
 .pp-panel-toggle,
-.pp-dialog {
+.pp-dialog,
+.pp-toast {
   background-color: var(--glass-tint);
   background-image: linear-gradient(180deg, var(--glass-sheen), transparent 46%);
   -webkit-backdrop-filter: blur(22px) saturate(200%);
@@ -35,8 +38,10 @@
 .pp-menu,
 .pp-panel,
 .pp-popover,
+.pp-live-pop,
 .pp-shape-menu,
-.pp-dialog {
+.pp-dialog,
+.pp-toast {
   background-color: var(--glass-thick);
   -webkit-backdrop-filter: blur(36px) saturate(200%);
   backdrop-filter: blur(36px) saturate(200%);
@@ -1898,36 +1903,327 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
 }
 
-/* A quiet centre-top note that other people are in the room. */
-.pp-live {
+/* ------------------------------------------------------------- live roster */
+
+/*
+ * The live pill sits over the canvas for the whole of a room's life, so the
+ * board itself says other people are here. It is the same island height as the
+ * menu and history clusters, centred between them, and it owns the only bubble
+ * that opens from the top edge.
+ */
+.pp-live-wrap {
   position: fixed;
-  z-index: 27;
+  z-index: 34;
   top: max(12px, env(safe-area-inset-top));
   left: 50%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
   transform: translateX(-50%);
+}
 
-  color: var(--on-surface-muted);
-  font-size: 11px;
+.pp-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px 0 9px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--on-surface);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 1;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: transform 130ms var(--ease-out);
+}
 
-  background-color: var(--glass-tint);
-  background-image: linear-gradient(180deg, var(--glass-sheen), transparent 46%);
-  -webkit-backdrop-filter: blur(22px) saturate(200%);
-  backdrop-filter: blur(22px) saturate(200%);
-  box-shadow: var(--shadow-island);
+.pp-live-pill:active {
+  transform: scale(0.94);
+}
+
+/* A slow, soft pulse: presence, not an alert. The second ring is the halo. */
+.pp-live-dot {
+  position: relative;
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45);
+  animation: pp-live-pulse 2.6s var(--ease-out) infinite;
+}
+
+.pp-live-dot[data-state="connecting"] {
+  background: var(--on-surface-muted);
+  animation: none;
+  box-shadow: none;
+}
+
+@keyframes pp-live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.42);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+.pp-live-text {
+  white-space: nowrap;
+}
+
+.pp-live-count {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-mid);
+  color: var(--on-surface-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The roster.
+ *
+ * Records the same arrival and departure as every other glass surface. The
+ * origin is the pill's top edge, which is why the card is centred on the pill
+ * with `translate`, leaving `transform` free for the scale animation.
+ */
+.pp-live-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 0;
+
+  width: min(272px, calc(100vw - 24px));
+  padding: 10px;
+  border-radius: 14px;
+  transform-origin: top center;
+  animation: pp-glass-in 220ms var(--ease-spring);
+  will-change: transform, opacity;
+}
+
+.pp-live-pop[data-state="closed"] {
+  animation: pp-glass-out 160ms var(--ease-out) forwards;
   pointer-events: none;
 }
 
-.pp-live[data-state="connecting"] {
-  opacity: 0.7;
+.pp-live-title {
+  margin: 0 0 4px;
+  padding: 0 4px;
+  color: var(--on-surface-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.6;
+  text-transform: uppercase;
 }
 
-.pp-menu-live {
-  margin-top: 2px;
+.pp-live-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 238px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 130, 0.4) transparent;
+}
+
+.pp-live-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 4px;
+  border-radius: 8px;
+}
+
+.pp-live-swatch {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.pp-live-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--on-surface);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-live-you {
+  color: var(--on-surface-muted);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+
+.pp-live-role {
+  flex: 0 0 auto;
+  color: var(--on-surface-muted);
+  font-size: 10.5px;
+}
+
+/* Quiet until wanted; red only on the hover that means it. */
+.pp-live-remove {
+  flex: 0 0 auto;
+  height: 24px;
+  margin-right: -2px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--on-surface-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 130ms var(--ease-out),
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.pp-live-remove:active {
+  transform: scale(0.94);
+}
+
+@media (hover: hover) {
+  .pp-live-remove:hover {
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+    color: var(--danger);
+  }
+}
+
+.pp-live-hint {
+  margin: 8px 4px 0;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--on-surface) 10%, transparent);
+  color: var(--on-surface-muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.pp-live-empty {
+  margin: 0;
+  padding: 6px 4px 2px;
+  color: var(--on-surface-muted);
+  font-size: 12px;
+}
+
+/* The pill and its rows are the two things a finger has to hit. */
+@media (pointer: coarse) {
+  /* 4 px lower, so a 44 px pill centres against the 52 px islands. */
+  .pp-live-wrap {
+    top: calc(max(12px, env(safe-area-inset-top)) + 4px);
+  }
+
+  .pp-live-pill {
+    height: 44px;
+    padding: 0 13px 0 11px;
+  }
+
+  .pp-live-row {
+    min-height: 44px;
+  }
+
+  .pp-live-remove {
+    height: 44px;
+    padding: 0 12px;
+  }
+}
+
+/* ---------------------------------------------------------------- notices */
+
+/*
+ * A sentence about the room, not a dialog: it sits above the dock, can be
+ * dismissed, and never blocks the canvas.
+ */
+.pp-toast {
+  position: fixed;
+  z-index: 46;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  left: 50%;
+  translate: -50% 0;
+
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: min(440px, calc(100vw - 24px));
+  padding: 7px 7px 7px 13px;
+  border-radius: 12px;
+
+  color: var(--on-surface);
+  font-size: 12.5px;
+  line-height: 1.45;
+
+  animation: pp-toast-in 260ms var(--ease-spring);
+  will-change: transform, opacity;
+}
+
+@keyframes pp-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.pp-toast-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--on-surface-muted);
+  cursor: pointer;
+  transition:
+    transform 130ms var(--ease-out),
+    background-color 120ms ease;
+}
+
+.pp-toast-close:active {
+  transform: scale(0.9);
+}
+
+@media (hover: hover) {
+  .pp-toast-close:hover {
+    background: var(--surface-mid);
+  }
+}
+
+@media (pointer: coarse) {
+  .pp-toast {
+    bottom: calc(132px + env(safe-area-inset-bottom));
+    font-size: 13px;
+  }
+
+  .pp-toast-close {
+    width: 44px;
+    height: 44px;
+  }
 }

@@ -76,6 +76,8 @@ export function attachCollab(httpServer) {
       doc: new Y.Doc(),
       peers: new Map(),
       sockets: new Set(),
+      /** Identity keys the host has removed; a room dies with its bans. */
+      banned: new Set(),
       presenceTimer: null,
       closeTimer: null,
     };
@@ -143,9 +145,15 @@ export function attachCollab(httpServer) {
         return next(new Error("invalid token"));
       }
 
+      const guestId =
+        typeof socket.handshake.auth?.guestId === "string"
+          ? cleanText(socket.handshake.auth.guestId, "", 64)
+          : "";
+
       socket.data.identity = {
         boardId: payload.board,
         userId: typeof payload.sub === "string" ? payload.sub : "unknown",
+        guestId,
         role: payload.role,
         name: cleanText(payload.name, "Guest", 60),
         color: cleanText(payload.color, "hsl(220 72% 48%)", 40),
@@ -166,6 +174,23 @@ export function attachCollab(httpServer) {
       return;
     }
 
+    // What a removal is remembered by. An account survives a reload; a guest
+    // survives it through the id its browser keeps.
+    const key =
+      identity.userId !== "unknown"
+        ? `u:${identity.userId}`
+        : identity.guestId
+          ? `g:${identity.guestId}`
+          : null;
+
+    if (key && room.banned.has(key)) {
+      socket.emit(protocol.server.fatal, {
+        error: "The host removed you from this notepad.",
+      });
+      socket.disconnect(true);
+      return;
+    }
+
     if (room.sockets.size >= protocol.limits.maxPeers) {
       socket.emit(protocol.server.fatal, { error: "This notepad already has as many people as it can hold." });
       socket.disconnect(true);
@@ -176,6 +201,7 @@ export function attachCollab(httpServer) {
     room.sockets.add(socket.id);
     room.peers.set(socket.id, {
       id: socket.id,
+      key,
       name: identity.name,
       color: identity.color,
       role: identity.role,
@@ -229,6 +255,27 @@ export function attachCollab(httpServer) {
         ? message.ids.filter((id) => typeof id === "string").slice(0, 2_000)
         : [];
       schedulePresence(room);
+    });
+
+    // Only the host may show someone out. The check lives here, not in the
+    // menu: a guest with a doctored client can ask, and the room still says no.
+    socket.on(protocol.client.remove, (message) => {
+      if (identity.role !== "owner") return;
+
+      const targetId = typeof message?.id === "string" ? message.id : "";
+      if (!targetId || targetId === socket.id) return;
+
+      const target = room.peers.get(targetId);
+      // The host cannot remove the host: several owner tabs are the same person.
+      if (!target || target.role === "owner") return;
+
+      // The ban outlives the socket, so a client that reconnects by itself, or
+      // a refreshed tab on the same device, does not walk straight back in.
+      if (target.key) room.banned.add(target.key);
+
+      const targetSocket = io.sockets.sockets.get(targetId);
+      targetSocket?.emit(protocol.server.removed, { by: identity.name });
+      targetSocket?.disconnect(true);
     });
 
     socket.on("disconnect", () => {

@@ -33,6 +33,8 @@ export interface CollabPeer {
   role: Role;
   cursor: CollabCursor | null;
   selection: string[];
+  /** True for this tab's own row, so a roster can label it instead of guessing. */
+  you: boolean;
 }
 
 export type CollabStatus = "connecting" | "online" | "offline";
@@ -44,8 +46,13 @@ export interface CollabSessionOptions {
   getElements: () => Element[];
   /** Elements the room changed, and ids it removed outright. */
   onRemote: (elements: Element[], removed: string[]) => void;
+  /** The whole room, this tab included; `you` marks the local row. */
   onPeers: (peers: CollabPeer[]) => void;
   onStatus: (status: CollabStatus) => void;
+  /** The host showed this tab out. The session is already stopping. */
+  onRemoved?: (by: string) => void;
+  /** A room-side refusal worth a sentence, such as a revoked link. */
+  onNotice?: (message: string) => void;
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -69,11 +76,16 @@ interface Message {
 }
 
 interface PresenceMessage {
-  peers?: CollabPeer[];
+  peers?: Omit<CollabPeer, "you">[];
 }
 
 interface ReadyMessage {
   you?: string;
+}
+
+interface NoticeMessage {
+  error?: string;
+  by?: string;
 }
 
 export class CollabSession {
@@ -154,12 +166,25 @@ export class CollabSession {
 
     this.socket.on(protocol.server.presence, (message: PresenceMessage) => {
       const peers = Array.isArray(message?.peers) ? message.peers : [];
-      // The roster is for the whole room, including this socket. Our own
-      // pointer is already on screen; drawing it again would double the ink.
-      this.options.onPeers(peers.filter((peer) => peer.id !== this.you));
+      // The roster includes this tab: the live panel says who is here, and
+      // "here" is not only other people. Cursors filter the local row out.
+      this.options.onPeers(peers.map((peer) => ({ ...peer, you: peer.id === this.you })));
     });
 
-    this.socket.on(protocol.server.fatal, () => {
+    this.socket.on(protocol.server.removed, (message: NoticeMessage) => {
+      // The socket is about to be closed by the host's side; stopping first
+      // keeps socket.io from reconnecting into the same refusal.
+      this.options.onRemoved?.(
+        typeof message?.by === "string" && message.by ? message.by : "The host",
+      );
+      this.options.onStatus("offline");
+      this.stop();
+    });
+
+    this.socket.on(protocol.server.fatal, (message: NoticeMessage) => {
+      if (typeof message?.error === "string" && message.error) {
+        this.options.onNotice?.(message.error);
+      }
       this.options.onStatus("offline");
     });
 
@@ -211,6 +236,16 @@ export class CollabSession {
     if (signature === this.lastSelection) return;
     this.lastSelection = signature;
     this.socket.emit(protocol.client.selection, { ids: [...ids] });
+  }
+
+  /**
+   * Shows a peer out of the room. The server checks the role again; this guard
+   * only keeps a viewer from producing traffic that would be refused.
+   */
+  remove(peerId: string): void {
+    if (this.stopped || !this.socket?.connected || this.role !== "owner") return;
+    if (!peerId) return;
+    this.socket.emit(protocol.client.remove, { id: peerId });
   }
 
   stop(): void {

@@ -134,7 +134,8 @@ export function BoardScreen({
   const [preferences, setPreferences] = useState<Preferences>(() => loadPreferences());
   const [role, setRole] = useState<Role | null>(initialRole);
   const [liveStatus, setLiveStatus] = useState<"offline" | "connecting" | "online">("offline");
-  const [peers, setPeers] = useState<CollabPeer[]>([]);
+  const [roster, setRoster] = useState<CollabPeer[]>([]);
+  const [collabNotice, setCollabNotice] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const toolRef = useRef<Tool>(initialRole === "viewer" ? "hand" : "select");
   const preferencesRef = useRef(preferences);
@@ -143,7 +144,8 @@ export function BoardScreen({
 
   const readOnly = role === "viewer";
   /** The room's head count: this tab is a person too. */
-  const people = peers.length + 1;
+  const people = roster.length || 1;
+  const otherPeople = roster.filter((peer) => !peer.you);
 
   // The next visit to `/` opens this notepad, not the shelf.
   useEffect(() => {
@@ -607,8 +609,13 @@ export function BoardScreen({
           guestId: guestId(),
           getElements: collabElements,
           onRemote: (elements, removed) => adoptElements(elements, removed),
-          onPeers: (next) => setPeers(next),
+          onPeers: (next) => setRoster(next),
           onStatus: (status) => setLiveStatus(status),
+          onNotice: (message) => setCollabNotice(message),
+          onRemoved: (by) => {
+            setCollabNotice(`${by} removed you from this notepad.`);
+            setRoster([]);
+          },
         });
         collabRef.current = session;
         await session.start();
@@ -626,7 +633,7 @@ export function BoardScreen({
       }
       session?.stop();
       if (collabRef.current === session) collabRef.current = null;
-      setPeers([]);
+      setRoster([]);
       setLiveStatus("offline");
     };
   }, [adoptElements, boardId, collabElements, ready, shareToken]);
@@ -970,7 +977,7 @@ export function BoardScreen({
         />
       ) : null}
 
-      <PeerCursors peers={peers} getCamera={getCamera} />
+      <PeerCursors peers={otherPeople} getCamera={getCamera} />
 
       <BoardChrome
         boardId={boardId}
@@ -1005,10 +1012,27 @@ export function BoardScreen({
         }}
         role={role}
         readOnly={readOnly}
-        peers={people}
         liveStatus={liveStatus}
+        roster={roster}
+        onRemovePeer={(id) => collabRef.current?.remove(id)}
         onShare={() => setShareOpen(true)}
       />
+
+      {collabNotice ? (
+        <div className="pp-toast" role="status" data-testid="collab-notice">
+          <span>{collabNotice}</span>
+          <button
+            type="button"
+            className="pp-toast-close"
+            aria-label="Dismiss"
+            onClick={() => setCollabNotice(null)}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+      ) : null}
 
       <ShareDialog
         boardId={boardId}

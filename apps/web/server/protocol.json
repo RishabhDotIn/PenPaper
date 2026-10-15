@@ -4,13 +4,15 @@
     "syncRequest": "sync-request",
     "update": "update",
     "cursor": "cursor",
-    "selection": "selection"
+    "selection": "selection",
+    "remove": "remove"
   },
   "server": {
     "ready": "ready",
     "sync": "sync",
     "update": "update",
     "presence": "presence",
+    "removed": "removed",
     "fatal": "fatal"
   },
   "limits": {

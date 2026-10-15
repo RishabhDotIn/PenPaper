@@ -59,9 +59,6 @@ export interface AppMenuProps {
   onShare?: () => void;
   /** A guest through a share link can watch but not edit. */
   readOnly?: boolean;
-  /** Live room state, shown under the account block. */
-  liveStatus?: "offline" | "connecting" | "online";
-  liveCount?: number;
   account?: ReactNode;
   /**
    * The device's notepads, rendered as a second view inside the same popover.
@@ -120,8 +117,6 @@ export function AppMenu({
   account,
   onShare,
   readOnly,
-  liveStatus,
-  liveCount,
   notepads,
   onOpenNotepad,
   onNewNotepad,
@@ -477,23 +472,6 @@ export function AppMenu({
           ) : (
             <div className="pp-menu-view">
               {account ? <div className="pp-menu-account">{account}</div> : null}
-
-              {liveStatus === "online" || liveStatus === "connecting" ? (
-                <p className="pp-menu-note pp-menu-live" data-state={liveStatus}>
-                  <span
-                    className="pp-sync-dot"
-                    data-tone={liveStatus === "online" ? "ok" : "idle"}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    {liveStatus === "connecting"
-                      ? "Connecting…"
-                      : (liveCount ?? 1) > 1
-                        ? `Live · ${liveCount} people here`
-                        : "Live · you are here"}
-                  </span>
-                </p>
-              ) : null}
 
               {notepads ? (
                 <button

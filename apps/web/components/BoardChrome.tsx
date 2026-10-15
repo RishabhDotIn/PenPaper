@@ -15,8 +15,10 @@ import type { Element, ElementType } from "@penpaper/shared";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountPanel } from "@/components/AccountPanel";
+import { LivePanel } from "@/components/LivePanel";
 import { useAccountStore } from "@/lib/collab/account";
 import type { Role } from "@/lib/collab/api";
+import type { CollabPeer } from "@/lib/collab/session";
 import { driveConfigured, requestSession } from "@/lib/drive/auth";
 import { describeSync } from "@/lib/drive/status";
 import {
@@ -68,8 +70,11 @@ export interface BoardChromeProps {
   /** This caller's role on the server copy, or null for a local-only board. */
   role: Role | null;
   readOnly: boolean;
-  peers: number;
   liveStatus: "offline" | "connecting" | "online";
+  /** Everyone in the room, this tab included. Empty when not live. */
+  roster: readonly CollabPeer[];
+  /** Host only: show someone out of the room. */
+  onRemovePeer?: (id: string) => void;
   onShare: () => void;
 }
 
@@ -102,8 +107,9 @@ export function BoardChrome({
   menu,
   role,
   readOnly,
-  peers,
   liveStatus,
+  roster,
+  onRemovePeer,
   onShare,
 }: BoardChromeProps) {
   const router = useRouter();
@@ -385,8 +391,6 @@ export function BoardChrome({
         account={accountNode}
         onShare={accountsConfigured || role ? onShare : undefined}
         readOnly={readOnly}
-        liveStatus={liveStatus}
-        liveCount={peers}
         onReset={readOnly ? undefined : menu.onReset}
         notepads={entries}
         onOpenNotepad={openNotepad}
@@ -424,6 +428,15 @@ export function BoardChrome({
           )
         }
       />
+
+      {liveStatus === "offline" ? null : (
+        <LivePanel
+          status={liveStatus}
+          peers={roster}
+          canRemove={role === "owner" && !readOnly}
+          onRemove={onRemovePeer}
+        />
+      )}
 
       {readOnly ? null : (
         <div className="pp-history" data-testid="history-controls" role="group" aria-label="History">
