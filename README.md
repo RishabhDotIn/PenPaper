@@ -16,8 +16,9 @@ the same canvas, live.
 | :---: | :---: |
 | ![Board on desktop](docs/screenshots/penpaper-desktop.png) | ![Board on a phone](docs/screenshots/penpaper-phone.png) |
 
-**Live demo:** not deployed yet — the whole stack fits on free tiers, see
-[Deploying](#deploying).
+**[penpaper-j09r.onrender.com](https://penpaper-j09r.onrender.com)** — the live
+deployment. Sign in with any Google account; no test-user list. The whole stack
+runs on free tiers, see [Hosting](#hosting).
 
 ## Features
 
@@ -156,20 +157,57 @@ database. Google setup is one Web application client with the site origin under
 The frame number is measured on the renderer's own body, not on
 `requestAnimationFrame` deltas.
 
-## Deploying
+## Hosting
 
-The app is a standard Node server; Socket.IO shares the same HTTP server, so
-live rooms need no second service.
+Live at **<https://penpaper-j09r.onrender.com>**. One Render web service serves
+the React app, the API routes, and the Socket.IO rooms from a single Node
+process, so collaboration costs no second instance. Postgres is Neon's free
+tier. No object storage, no expiring trial, no card.
 
-1. Create a free Postgres project at [neon.tech](https://neon.tech).
+```mermaid
+flowchart LR
+  B["Browser / PWA"] -->|"HTTPS + WSS"| R["Render free web service<br/>Next + Socket.IO · 512 MB"]
+  R -->|"SQL"| N[("Neon Postgres<br/>users · boards · links")]
+  R -->|"tokeninfo"| G["Google Identity"]
+  B -->|"Drive REST"| D["Google Drive"]
+  B ---|"every stroke first"| I[("IndexedDB")]
+```
+
+**Deploy a copy**
+
+1. Create a free Postgres project at [neon.tech](https://neon.tech) and copy the
+   pooled connection string, keeping `sslmode=require` and dropping
+   `channel_binding`.
 2. In Render, choose **New → Blueprint** and select this repository.
-3. Set `DATABASE_URL`, `PENPAPER_SECRET`, and `NEXT_PUBLIC_GOOGLE_CLIENT_ID`;
-   add the Render origin to the OAuth client.
+   [`render.yaml`](render.yaml) sets the free plan, Singapore, the build, and
+   `node server/main.mjs --prod` as the start command.
+3. Set `DATABASE_URL`, `PENPAPER_SECRET`, and `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+   `NEXT_PUBLIC_*` is inlined at build time, so redeploy after changing one.
 
-Render free, Neon free, no object storage, no expiring trial. The instance
-sleeps after 15 minutes, but the board renders from IndexedDB before any network
-call, so a cold start is never data loss. [`warm.yml`](.github/workflows/warm.yml)
-keeps it awake during waking hours.
+**Publishing Google sign-in**
+
+The OAuth client is one **Web application** client with the site origin under
+**Authorized JavaScript origins** — there is no client secret and no redirect
+URI, because the browser receives a token and the server verifies it.
+
+While the consent screen is in *Testing*, only added test users can sign in.
+Leaving Testing needs three things, all free:
+
+- **Data access** limited to `openid`, `userinfo.email`, `userinfo.profile`, and
+  `drive.file` — all non-sensitive, so no Google review.
+- A **home page** and **privacy policy** URL on an authorized domain. Both point
+  at the deployment itself, the policy at [`/privacy`](https://penpaper-j09r.onrender.com/privacy).
+- **Ownership verification** of that domain in [Search Console](https://search.google.com/search-console)
+  with the HTML file in `apps/web/public/`. Brand verification checks this, and
+  it can take a day to propagate.
+
+`onrender.com` is on the Public Suffix List, so the authorized domain is the full
+app host, not `onrender.com`.
+
+The free instance sleeps after 15 minutes. The board paints from IndexedDB
+before any network call, so a cold start is never data loss, and
+[`warm.yml`](.github/workflows/warm.yml) keeps it awake 07:30–00:29 IST through
+the `PENPAPER_URL` repository variable.
 
 ## Roadmap
 
