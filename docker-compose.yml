@@ -1,0 +1,81 @@
+# Redis and Kafka for local development.
+#
+# Neither service is required by the app. With `REDIS_URL` and `KAFKA_BROKERS`
+# unset, PenPaper runs exactly as it does on the free Render deploy: per-process
+# rate limits, Postgres session lookups, one process holding the live rooms, and
+# no activity log. This file is how you see the other half work.
+#
+#   docker compose up -d
+#   pnpm --filter web dev        # terminal one
+#   pnpm --filter web worker     # terminal two
+#
+# Then set in apps/web/.env.local:
+#
+#   REDIS_URL=redis://localhost:6379
+#   KAFKA_BROKERS=localhost:9092
+#
+# Both images are pinned to the versions this integration was tested against.
+
+services:
+  redis:
+    image: redis:8.10-alpine
+    # Append-only file, because the room log is what lets a second instance
+    # rebuild a live document; losing it to a restart would defeat the point.
+    command:
+      [
+        "redis-server",
+        "--port", "6379",
+        "--appendonly", "yes",
+        "--appendfsync", "everysec",
+        "--maxmemory", "256mb",
+        "--maxmemory-policy", "volatile-lru",
+      ]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:3.9.1
+    # Single node, KRaft mode: no ZooKeeper, because there is nothing here that
+    # needs a quorum. The listener names match what the broker advertises to a
+    # client running on the host.
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      # One broker means every internal topic is single-replica.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Three partitions, so the worker can be scaled later without a reshape.
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_RETENTION_HOURS: 24
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+
+volumes:
+  redis-data:
+  kafka-data:
