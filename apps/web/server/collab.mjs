@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { Server } from "socket.io";
 import { jwtVerify } from "jose";
 import * as Y from "yjs";
+import { emitBoardEvent } from "./events.mjs";
+import { attachSharedRooms } from "./rooms-redis.mjs";
 
 /**
  * The realtime room service.
@@ -45,7 +47,7 @@ function cleanText(value, fallback, max) {
 }
 
 /** Enters the collab service; returns the Socket.IO server, or null. */
-export function attachCollab(httpServer) {
+export async function attachCollab(httpServer) {
   const secretValue = process.env.PENPAPER_SECRET?.trim();
   if (!secretValue) {
     console.warn(
@@ -69,6 +71,13 @@ export function attachCollab(httpServer) {
 
   /** @type {Map<string, ReturnType<typeof createRoom>>} */
   const rooms = new Map();
+  /** One in-flight creation per board, so two tabs cannot seed two documents. */
+  const pending = new Map();
+
+  // Redis is optional. With it, broadcasts cross instances and a room can be
+  // rebuilt from its log; without it this is the single-process server it has
+  // always been.
+  const shared = await attachSharedRooms(io);
 
   function createRoom(id) {
     return {
@@ -80,23 +89,59 @@ export function attachCollab(httpServer) {
       banned: new Set(),
       presenceTimer: null,
       closeTimer: null,
+      /** Stops the log tail for this room; null without Redis. */
+      stopTail: null,
     };
   }
 
-  function roomFor(id) {
-    let room = rooms.get(id);
-    if (room) {
-      if (room.closeTimer) {
-        clearTimeout(room.closeTimer);
-        room.closeTimer = null;
+  /**
+   * Opens the room, replaying its log first when another instance has one.
+   *
+   * The replay has to finish before the first socket is admitted: a peer whose
+   * `sync-request` arrives during the replay would be handed a half-built
+   * document and then keep merging from a position nobody else has.
+   */
+  async function roomFor(id) {
+    const existing = rooms.get(id);
+    if (existing) {
+      if (existing.closeTimer) {
+        clearTimeout(existing.closeTimer);
+        existing.closeTimer = null;
       }
-      return room;
+      return existing;
     }
 
-    if (rooms.size >= MAX_ROOMS) return null;
-    room = createRoom(id);
-    rooms.set(id, room);
-    return room;
+    const inFlight = pending.get(id);
+    if (inFlight) return inFlight;
+
+    const creation = (async () => {
+      if (rooms.size >= MAX_ROOMS) return null;
+
+      const room = createRoom(id);
+
+      if (shared) {
+        const entries = await shared.read(id);
+        for (const entry of entries) {
+          const update = decode(entry.payload);
+          if (update) Y.applyUpdate(room.doc, update);
+        }
+        const last = entries.at(-1)?.id ?? "0-0";
+        room.stopTail = shared.tail(id, last, (payload) => {
+          const update = decode(payload);
+          if (update) Y.applyUpdate(room.doc, update);
+        });
+      }
+
+      rooms.set(id, room);
+      return room;
+    })();
+
+    pending.set(id, creation);
+    try {
+      return await creation;
+    } finally {
+      pending.delete(id);
+    }
   }
 
   function presencePayload(room) {
@@ -127,8 +172,14 @@ export function attachCollab(httpServer) {
       room.closeTimer = null;
       if (room.sockets.size > 0) return;
       if (room.presenceTimer) clearTimeout(room.presenceTimer);
+      room.stopTail?.();
+      room.stopTail = null;
       room.doc.destroy();
       rooms.delete(room.id);
+      // The log belongs to the room, not to the process: once the last peer
+      // has gone, the history has already been written to Postgres by the
+      // clients' debounced saves.
+      void shared?.drop(room.id);
     }, ROOM_GRACE_MS);
   }
 
@@ -164,9 +215,13 @@ export function attachCollab(httpServer) {
     }
   });
 
-  io.on("connection", (socket) => {
+  io.on("connection", async (socket) => {
     const identity = socket.data.identity;
-    const room = roomFor(identity.boardId);
+    const room = await roomFor(identity.boardId);
+
+    // Awaiting the replay can outlive the handshake; a socket that left in the
+    // meantime must not be counted as a peer.
+    if (!socket.connected) return;
 
     if (!room) {
       socket.emit(protocol.server.fatal, { error: "This server is busy. Try again in a moment." });
@@ -233,6 +288,9 @@ export function attachCollab(httpServer) {
       if (update.byteLength > protocol.limits.maxUpdateBytes) return;
 
       Y.applyUpdate(room.doc, update, socket.id);
+      // The log is what lets a peer on another instance catch up; the adapter
+      // is what makes them see it now. Both are optional.
+      void shared?.append(room.id, message.update);
       // The sender already has this update; the rest of the room does not.
       socket.to(room.id).emit(protocol.server.update, { update: message.update });
     });
@@ -276,6 +334,15 @@ export function attachCollab(httpServer) {
       const targetSocket = io.sockets.sockets.get(targetId);
       targetSocket?.emit(protocol.server.removed, { by: identity.name });
       targetSocket?.disconnect(true);
+
+      emitBoardEvent({
+        type: "member.removed",
+        boardId: identity.boardId,
+        actorId: identity.userId,
+        actorName: identity.name,
+        role: identity.role,
+        detail: target.name,
+      });
     });
 
     socket.on("disconnect", () => {

@@ -14,6 +14,7 @@ if (production) process.env.NODE_ENV = "production";
 
 const next = (await import("next")).default;
 const { attachCollab } = await import("./collab.mjs");
+const { closeEvents } = await import("./events.mjs");
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 const dev = !production;
@@ -31,16 +32,24 @@ const server = createServer((request, response) => {
   });
 });
 
-attachCollab(server);
+await attachCollab(server);
 
 server.listen(port, () => {
+  const redis = process.env.REDIS_URL?.trim() ? "Redis" : "in-process";
+  const events = process.env.KAFKA_BROKERS?.trim() ? "Kafka" : "none";
   console.log(
     `> PenPaper ready on http://localhost:${port} as ${production ? "production" : "development"}`,
   );
+  console.log(`> limits and sessions: ${redis}, board events: ${events}`);
 });
 
 const shutdown = () => {
-  server.close(() => process.exit(0));
+  // Drain the event queue before the process goes away; the timeout below is
+  // the backstop, not the plan.
+  void (async () => {
+    await closeEvents();
+    server.close(() => process.exit(0));
+  })();
   // A stuck keep-alive connection must not outlive the deploy.
   setTimeout(() => process.exit(0), 5_000).unref();
 };

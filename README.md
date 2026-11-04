@@ -1,10 +1,9 @@
 # PenPaper
 
-An infinite whiteboard that keeps up with a pen, a finger, or a mouse. It is
-local-first: every stroke is written to the device immediately, the board
-reopens where you left it, and the installed app keeps working offline. Sign in
-and your notepads follow you to every device; a share link puts other people on
-the same canvas, live.
+An infinite whiteboard that keeps up with a pen, a finger, or a mouse. Strokes
+save as you draw, the board reopens exactly where you left it, and the installed
+app works offline. Sign in and your notepads follow you to every device; a share
+link puts other people on the same canvas, live.
 
 ![Next.js](https://img.shields.io/badge/Next.js-16.4-000000?logo=nextdotjs&logoColor=white)
 ![React](https://img.shields.io/badge/React-19.3-61DAFB?logo=react&logoColor=white)
@@ -54,6 +53,8 @@ save, then upload; newer `updatedAt` wins and deletions travel as tombstones.
 on REST and on the socket. Yjs over Socket.IO at stroke speed, peer cursors with
 name and colour, and a live roster where the host can remove a participant.
 Viewers open read-only: hand tool only, and the server refuses writes anyway.
+When the optional event pipeline is on, the menu also lists who created, saved,
+or shared the notepad recently.
 
 ## Architecture
 
@@ -76,6 +77,9 @@ flowchart LR
   end
   PG[("Neon Postgres")]
   G["Google Identity + Drive"]
+  R[("Redis<br/>limits · cache · rooms")]
+  K[("Kafka<br/>pp.board.events")]
+  W["worker process"]
 
   UI --> ENG
   ENG --> IDB
@@ -84,13 +88,33 @@ flowchart LR
   UI -->|"Drive REST"| G
   NEXT --> PG
   NEXT -->|"verify token"| G
+  NEXT -.->|"optional"| R
+  SIO -.->|"optional"| R
+  NEXT -.->|"optional"| K
+  K -.-> W
+  W -.->|"events"| PG
   SW -.->|"offline assets"| UI
 ```
 
 A board lives in three places: IndexedDB on every device, Postgres for the
 account, and an in-memory room while people are present. Each is merged
-element-by-element, so two people drawing different shapes never conflict.
-Details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+element-by-element, so two people drawing different shapes never conflict. The
+dotted paths are optional: with no `REDIS_URL` and no `KAFKA_BROKERS` the app
+runs the same way it does on the free deployment. Details in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+### Optional infrastructure
+
+Redis and Apache Kafka are wired in but not required, and the live deployment
+runs without either. Set `REDIS_URL` and rate limits, sessions, and room state
+are shared between instances, so two processes behind one host agree. Set
+`KAFKA_BROKERS` and the API publishes board events to a topic, while a second
+process (`pnpm --filter web worker`) writes them to Postgres; that table is what
+the menu's activity line reads. Without the two variables the app keeps the
+single-process behaviour above: a per-process fixed window, a Postgres session
+lookup, one process holding the rooms, and no activity line.
+[`docker-compose.yml`](docker-compose.yml) starts both services locally at the
+versions this was tested against, Redis 8.10 and Kafka 3.9 in KRaft mode.
 
 ## Tech stack
 
@@ -103,6 +127,8 @@ Details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 | State and storage | Zustand 5, IndexedDB via `idb` 8 |
 | Accounts and boards | Postgres on Neon's free tier |
 | Live rooms | Socket.IO 4.8 + Yjs 13.6 in the same Node process |
+| Cache and shared rooms | Redis 8.10 via `ioredis` (optional) |
+| Board activity | Kafka 3.9 via `@platformatic/kafka` + a worker (optional) |
 | Tests | Vitest 5, Playwright 1.64 |
 | Host | Render free web service |
 
@@ -118,7 +144,7 @@ pnpm --filter web dev        # http://localhost:3000
 Use `localhost`, not `127.0.0.1` — Next treats them as different origins.
 `/` opens the last notepad, `/b/demo` the seeded demo, `/s/<token>` a share link.
 
-Without configuration the app is a local-first whiteboard. Accounts, sharing,
+Without configuration the app runs entirely in the browser. Accounts, sharing,
 and rooms switch on when these are set in `apps/web/.env.local` (see
 [`apps/web/.env.example`](apps/web/.env.example)):
 
@@ -127,10 +153,24 @@ and rooms switch on when these are set in `apps/web/.env.local` (see
 | `DATABASE_URL` | Postgres connection string (`sslmode=require`) |
 | `PENPAPER_SECRET` | 32+ random bytes, signs the five-minute room token |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Public OAuth client for sign-in and Drive |
+| `REDIS_URL` | Optional. Shared rate limits, session cache, room log, adapter |
+| `KAFKA_BROKERS` | Optional. Comma-separated brokers for board events |
+| `KAFKA_TOPIC` | Optional. Defaults to `pp.board.events` |
 
 The schema creates itself on first request, and the build never needs the
 database. Google setup is one Web application client with the site origin under
 **Authorized JavaScript origins** — see [`docs/GOOGLE-DRIVE.md`](docs/GOOGLE-DRIVE.md).
+
+The optional services run in Docker:
+
+```bash
+docker compose up -d              # Redis 8.10 and Kafka 3.9 (KRaft)
+pnpm --filter web dev             # terminal one
+pnpm --filter web worker          # terminal two, only when Kafka is set
+```
+
+Then point `REDIS_URL` at `redis://localhost:6379` and `KAFKA_BROKERS` at
+`localhost:9092` in `apps/web/.env.local`.
 
 ## Scripts
 
@@ -139,6 +179,7 @@ database. Google setup is one Web application client with the site origin under
 | `pnpm --filter web dev` | Next + Socket.IO in one process |
 | `pnpm --filter web build` | Production build |
 | `pnpm --filter web start` | Production server with live rooms |
+| `pnpm --filter web worker` | Kafka consumer writing board events |
 | `pnpm -r typecheck` | TypeScript across all packages |
 | `pnpm -r test` | Engine and web unit tests |
 | `pnpm --filter web e2e` | Playwright browser tests |
@@ -163,6 +204,12 @@ Live at **<https://penpaper-j09r.onrender.com>**. One Render web service serves
 the React app, the API routes, and the Socket.IO rooms from a single Node
 process, so collaboration costs no second instance. Postgres is Neon's free
 tier. No object storage, no expiring trial, no card.
+
+Redis and Kafka are not part of this deployment: the free plan has no second
+service for the worker, and the app is designed to run without both. Setting
+`REDIS_URL` and `KAFKA_BROKERS` on a host that provides them turns on shared
+rate limits and rooms, the session cache, and the activity log described in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ```mermaid
 flowchart LR

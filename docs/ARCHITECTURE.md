@@ -12,14 +12,20 @@ apps/web              Next.js App Router shell
   app/                the launcher at `/`: last notepad, or a one-time chooser
   app/b/[id]          one board per route; `?share=<token>` carries an invitation
   app/s/[token]       a share link, resolved server-side then redirected to the board
-  app/api/            accounts, boards, share links, room token (Node runtime)
+  app/api/            accounts, boards, share links, room token, activity (Node runtime)
   server/             one Node process: Next + Socket.IO (`main.mjs`, `collab.mjs`)
+  server/events.mjs   Kafka producer, event validator, bounded send queue
+  server/worker.mjs   separate process: Kafka consumer writing pp_board_events
+  server/rooms-redis.mjs  Socket.IO Redis adapter and the per-room stream log
+  server/schema.mjs   the event table, shared by the API and the worker
   components/         Launcher, BoardLoader, BoardScreen, BoardChrome, BoardSurface,
                       TextEditorOverlay, AccountPanel, ShareDialog, PeerCursors
   lib/storage.ts      IndexedDB scene + notepad index stores (idb)
   lib/library.ts      notepad list model, demo seed, relative times
   lib/collab/         account store, API client, durable board sync, Yjs session
-  lib/server/         Postgres schema, auth, roles, share tokens, room JWT
+  lib/server/         Postgres schema, auth, roles, share tokens, room JWT,
+                      Redis client and cache, event emission
+  lib/activity.ts     one activity item and the sentence the menu shows
   lib/drive/          optional Google Drive sync (auth, REST, merge, reconcile)
   lib/preferences.ts  validated theme/paper/layout/style/auto-sync defaults (localStorage)
   store/board-store.ts  Zustand metadata (status, element count, savedAt)
@@ -268,6 +274,7 @@ hint. The API surface is:
 | `GET/PUT/DELETE /api/boards/<id>` | one snapshot, its role, its title |
 | `POST /api/boards/<id>/share` | mint (or replace) a live link for a role |
 | `POST /api/boards/<id>/collab` | five-minute room token |
+| `GET /api/boards/<id>/activity` | the last six board events, or none |
 | `GET /api/share/<token>` | resolve a link for programmatic use |
 
 There is no separate management route. The hamburger's notepad list carries
@@ -586,6 +593,129 @@ debounce and flushed when the tab hides; it never throws into the canvas. A
 share link that cannot be resolved because the network is down says "could not
 reach" and offers a retry, rather than pretending the link is invalid.
 
+## Redis and Kafka (optional)
+
+Both services are optional. The free Render deploy sets neither, and everything
+above works exactly as described: rate limits are per process, sessions are read
+from Postgres, one process owns the rooms, and the activity line is absent. The
+services exist to make the same app correct on more than one instance, and to
+give board history a home that a snapshot cannot provide.
+
+`docker-compose.yml` pins the two versions this integration was verified
+against: `redis:8.10-alpine` and `apache/kafka:3.9.1` in KRaft mode (no
+ZooKeeper, three partitions, 24 hours of retention). Start them, then run the
+web process and the worker side by side:
+
+```bash
+docker compose up -d
+pnpm --filter web dev
+pnpm --filter web worker
+```
+
+and set `REDIS_URL=redis://localhost:6379` and
+`KAFKA_BROKERS=localhost:9092` in `apps/web/.env.local`.
+
+### Where the configuration is read
+
+Both `.env.local` files are loaded by the `node --env-file-if-exists` wrapper in
+the `dev`, `start`, and `worker` scripts. Next reads `.env.local` again for its
+own routes, which is later than module evaluation. A module-level
+`const url = process.env.REDIS_URL` would therefore capture `undefined` in the
+process that boots Next and silently disable both features, so every
+configuration value is read inside the function that uses it (`brokerList()`,
+`eventsEnabled()`, `eventsTopic()`, and `attachSharedRooms`). The client and the
+producer live on `globalThis` for the opposite reason: Next compiles each route
+handler into its own module, and a module-scoped singleton would become one
+connection per route.
+
+### Redis
+
+One connection is shared by the routes (`lib/server/redis.ts`); the room service
+opens its own four (`server/rooms-redis.mjs`). Each job replaces something that
+would otherwise be wrong with two instances:
+
+- **Rate limits.** A Lua script keeps a sorted set of request timestamps per key
+  and allows `limit` inside a sliding window. The in-process limiter it replaces
+  uses a fixed window, which lets a client spend the whole quota at the end of
+  one minute and again at the start of the next. Keys are `pp:limit:*`; the
+  script removes expired members, checks the count, and writes atomically, so
+  two instances cannot both see room under the limit.
+- **Session cache.** `currentUser()` caches the joined user row under
+  `pp:cache:session:<sha256>` for five minutes, never longer than the session
+  itself. Sign-out deletes the key. It is a cache, not a second source of truth:
+  a miss falls through to Postgres, and an unreachable Redis is skipped for five
+  seconds after a failure.
+- **Shared rooms.** `@socket.io/redis-adapter` publishes broadcasts to every
+  instance. The adapter alone is not enough: an instance that opens a room it has
+  never seen would answer the first `sync-request` with an empty canvas. Each
+  applied update is therefore also appended to a Redis Stream
+  (`pp:room:<id>`, capped near 5,000 entries, ten-minute expiry), and
+  `roomFor()` replays the whole stream before admitting the first socket. A
+  blocked `XREAD` owns its connection, so the tail runs on a fourth, dedicated
+  client; sharing it with `XADD` parked every append behind the tail loop.
+- **Save coalescing.** `redisOnce()` is `SET NX PX`: the first autosave on a
+  board in a minute is the one that reaches the event log. Without Redis the
+  same rule runs on a bounded in-process map, so a single instance does not
+  publish thousands of identical "saved" lines.
+
+A Redis that is down at boot costs one probe (about a second) and rooms stay
+single-process; a Redis that goes away while the app is running costs one
+2-second connect attempt and one 1.5-second command timeout for the routes,
+which then fall back to Postgres and the in-process limiter. Broadcasts wait in
+the adapter's offline queue until Redis returns rather than rejecting into a
+promise nobody awaits.
+
+### Kafka
+
+`KAFKA_BROKERS` enables a small event pipeline:
+
+```
+API route / socket ──emitBoardEvent──▶ queue ──Producer──▶ pp.board.events
+                                                              │
+                                          worker (penpaper-events)
+                                                              │
+                                                    pp_board_events (Postgres)
+                                                              │
+                                        GET /api/boards/<id>/activity
+```
+
+- **Producer.** `server/events.mjs` validates the event once, then hands it to a
+  bounded queue. Publishing happens after the response: a slow or dead broker
+  costs the request nothing, and the oldest queued event is dropped when the
+  queue is full. Seven types are allowed: `board.created`, `board.saved`,
+  `share.minted`, `share.revoked`, `board.deleted`, `room.opened`, and
+  `member.removed`.
+- **Consumer.** `server/worker.mjs` is a second process with its own offset and
+  database pool. It validates every message again, because a topic is an outside
+  system, and writes `insert ... on conflict (id) do nothing`: Kafka delivers at
+  least once, and a redelivered event is a no-op rather than a duplicate line.
+  A row that cannot be written is logged and skipped so one bad event cannot
+  wedge every other board's activity. With no brokers the worker says so and
+  exits cleanly.
+- **Consumer group.** `penpaper-events` with three partitions, so a second
+  worker can be added later without reshaping the topic. The worker creates the
+  topic if it is missing.
+- **Reader.** `GET /api/boards/<id>/activity` applies the same role rule as the
+  board itself (owner session or valid share token, otherwise 404) and returns
+  at most six rows. When Kafka is unconfigured it returns `enabled: false`
+  immediately, without touching the table.
+
+`lib/activity.ts` holds the shared `ActivityItem` type and the sentence for each
+event, so the route and the menu cannot drift on a field name. `AppMenu` shows
+the section only when `events` is on and the list is non-empty; `BoardScreen`
+asks for it when the menu opens, throttled to once every 15 seconds.
+
+The pipeline was verified against Redis 8.10.3, Kafka 3.9.1, and the Neon
+database: one draw produced `board.created`, three quick saves produced exactly
+one `board.saved`, share links produced `share.minted`, and opening a room
+produced `room.opened`, all through the worker. Two production builds on ports
+3100 and 3101 shared one room: a stroke written on 3100 was replayed by 3101
+from the stream, and a broadcast sent on 3100 reached a socket on 3101 through
+the adapter. The 13th request to a ten-per-minute route returned 429. With the
+session row deleted from Postgres, the API still answered from the cache until
+the key was deleted. With both URLs pointed at closed ports, the app still
+served the account and saved a board.
+
 ## Offline shell
 
 `public/sw.js` is intentionally narrow:
@@ -669,8 +799,12 @@ dashboard-set secrets, with `NEXT_PUBLIC_GOOGLE_CLIENT_ID` optional. Socket.IO
 upgrades share the server with Next, so live rooms cost no second service.
 Postgres is Neon's free tier; the schema is created by the first request, so the
 build never needs the database. With none of these set, the deployment still
-builds and runs as the local-first notepad. The free instance sleeps after 15
-minutes; `warm.yml` pings it every 10 minutes between 02:30 and 18:30 UTC
+builds and runs as the local-first notepad. Redis and Kafka are not part of the
+free deployment; setting `REDIS_URL` and `KAFKA_BROKERS` is what makes rate
+limits, sessions, and rooms shared across instances, and board activity visible.
+Kafka also needs a second process, `pnpm --filter web worker`; the free plan has
+no second service, so the live deployment leaves both unset. The free instance
+sleeps after 15 minutes; `warm.yml` pings it every 10 minutes between 02:30 and 18:30 UTC
 (08:00–24:00 IST), which uses about 500 of the 750 hours. The app renders local
 content before any network call, so a sleeping instance never blocks a returning
 user's board.
