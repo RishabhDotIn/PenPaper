@@ -1,6 +1,7 @@
 import { currentUser } from "@/lib/server/auth";
 import { createShare, getBoard, revokeShare } from "@/lib/server/boards";
 import { databaseConfigured } from "@/lib/server/db";
+import { emitBoardEvent } from "@/lib/server/events";
 import { allowRequest, fail, ok, readJson } from "@/lib/server/http";
 
 export const runtime = "nodejs";
@@ -43,6 +44,15 @@ export async function POST(request: Request, context: RouteContext) {
 
   const link = await createShare({ boardId: id, userId: user.id, role });
 
+  emitBoardEvent({
+    type: "share.minted",
+    boardId: id,
+    actorId: user.id,
+    actorName: user.name,
+    role,
+    detail: role,
+  });
+
   return ok({
     token: link.token,
     role: link.role,
@@ -64,6 +74,15 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (found.role !== "owner") return fail(403, "Only the owner can manage sharing");
 
   await revokeShare(id);
+
+  emitBoardEvent({
+    type: "share.revoked",
+    boardId: id,
+    actorId: user.id,
+    actorName: user.name,
+    role: "owner",
+    detail: null,
+  });
 
   return ok({ ok: true });
 }

@@ -1,6 +1,7 @@
 export {
   AppMenu,
   CANVAS_BACKGROUNDS,
+  type ActivityEntry,
   type AppMenuProps,
   type CanvasLayout,
   type NotepadEntry,

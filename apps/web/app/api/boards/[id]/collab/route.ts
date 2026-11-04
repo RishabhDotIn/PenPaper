@@ -2,6 +2,7 @@ import { currentUser } from "@/lib/server/auth";
 import { getBoard } from "@/lib/server/boards";
 import { collabConfigured, colorFor, guestName, signCollabToken } from "@/lib/server/collab-token";
 import { databaseConfigured } from "@/lib/server/db";
+import { emitBoardEvent } from "@/lib/server/events";
 import { allowRequest, cleanBoardId, fail, ok, readJson } from "@/lib/server/http";
 
 export const runtime = "nodejs";
@@ -57,6 +58,15 @@ export async function POST(request: Request, context: RouteContext) {
     role: found.role,
     name,
     color: colorFor(identity),
+  });
+
+  emitBoardEvent({
+    type: "room.opened",
+    boardId: id,
+    actorId: user?.id ?? null,
+    actorName: name,
+    role: found.role,
+    detail: null,
   });
 
   return ok({ ...signed, role: found.role });

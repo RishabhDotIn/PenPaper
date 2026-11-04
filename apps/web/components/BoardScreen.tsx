@@ -14,7 +14,8 @@ import {
 } from "@/lib/preferences";
 import { defaultTitle, loadMeta, saveBoard, type BoardSnapshot } from "@/lib/storage";
 import { accountUser, useAccountStore } from "@/lib/collab/account";
-import type { Role } from "@/lib/collab/api";
+import { fetchBoardActivity, type Role } from "@/lib/collab/api";
+import { describeActivity, relativeTime, type ActivityItem } from "@/lib/activity";
 import {
   ensureServerBoard,
   flushServerSync,
@@ -52,7 +53,7 @@ import {
   type WheelInput,
 } from "@penpaper/engine";
 import type { Element } from "@penpaper/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const WORLD = { x: -1_000_000, y: -1_000_000, width: 2_000_000, height: 2_000_000 };
 const IDENTITY_CAMERA: Camera = { x: 0, y: 0, zoom: 1 };
@@ -137,6 +138,7 @@ export function BoardScreen({
   const [roster, setRoster] = useState<CollabPeer[]>([]);
   const [collabNotice, setCollabNotice] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
   const toolRef = useRef<Tool>(initialRole === "viewer" ? "hand" : "select");
   const preferencesRef = useRef(preferences);
   preferencesRef.current = preferences;
@@ -146,6 +148,41 @@ export function BoardScreen({
   /** The room's head count: this tab is a person too. */
   const people = roster.length || 1;
   const otherPeople = roster.filter((peer) => !peer.you);
+
+  const activityFetchedAt = useRef(0);
+
+  /**
+   * Loads the activity line, when the menu is about to show it.
+   *
+   * Fetched on open rather than on mount: nobody reads this list unless the
+   * panel is in front of them, and a board that never opens its menu should
+   * not cost a request. The throttle is what stops holding the menu open and
+   * tapping around from turning into polling.
+   */
+  const refreshActivity = useCallback(() => {
+    const now = Date.now();
+    if (now - activityFetchedAt.current < 15_000) return;
+    if (!useAccountStore.getState().events) return;
+    activityFetchedAt.current = now;
+
+    void fetchBoardActivity(boardId, shareToken)
+      .then((result) => {
+        setActivity(result.enabled ? result.events.slice(0, 3) : []);
+      })
+      .catch(() => {
+        // A missing activity line is not worth a notice: the menu is still
+        // complete without it, and the next open tries again.
+      });
+  }, [boardId, shareToken]);
+
+  const activityEntries = useMemo(
+    () =>
+      activity.flatMap((item) => {
+        const text = describeActivity(item);
+        return text ? [{ text, when: relativeTime(item.at) }] : [];
+      }),
+    [activity],
+  );
 
   // The next visit to `/` opens this notepad, not the shelf.
   useEffect(() => {
@@ -1016,6 +1053,8 @@ export function BoardScreen({
         roster={roster}
         onRemovePeer={(id) => collabRef.current?.remove(id)}
         onShare={() => setShareOpen(true)}
+        activity={activityEntries}
+        onMenuOpened={refreshActivity}
       />
 
       {collabNotice ? (

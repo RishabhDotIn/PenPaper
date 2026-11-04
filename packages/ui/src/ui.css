@@ -488,6 +488,38 @@
   color: var(--on-surface-muted);
 }
 
+/* What happened on this notepad lately. Quiet on purpose: it answers a
+   question you only have while the menu is already open. */
+.pp-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pp-activity-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--on-surface);
+}
+
+.pp-activity-text {
+  min-width: 0;
+}
+
+.pp-activity-when {
+  flex: none;
+  font-size: 11px;
+  color: var(--on-surface-muted);
+  white-space: nowrap;
+}
+
 /* ------------------------------------------------- menu: identity + list */
 
 /* Each view fades in from the side the way a stacked panel does: enough to

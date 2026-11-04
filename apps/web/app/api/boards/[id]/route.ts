@@ -9,7 +9,8 @@ import {
   type BoardContent,
   type Role,
 } from "@/lib/server/boards";
-import { databaseConfigured } from "@/lib/server/db";
+import { databaseConfigured, sql } from "@/lib/server/db";
+import { emitBoardEvent, emitBoardSaved } from "@/lib/server/events";
 import { allowRequest, cleanTitle, fail, ok, readJson } from "@/lib/server/http";
 
 export const runtime = "nodejs";
@@ -56,7 +57,7 @@ export async function PUT(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const share = new URL(request.url).searchParams.get("share");
-  const { found } = await access(id, share);
+  const { user, found } = await access(id, share);
   if (!found) return fail(404, "That notepad is not available");
   if (!canWrite(found.role)) return fail(403, "This link is view only");
 
@@ -77,6 +78,12 @@ export async function PUT(request: Request, context: RouteContext) {
 
   const title = cleanTitle(body?.title, found.board.title);
   const seq = await saveBoard({ id, title, content });
+
+  await emitBoardSaved(id, {
+    actorId: user?.id ?? null,
+    actorName: user?.name ?? "A guest",
+    role: found.role,
+  });
 
   return ok({ seq, savedAt: Date.now(), role: found.role });
 }
@@ -103,11 +110,23 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (!databaseConfigured) return fail(503, "Accounts are not configured on this server");
 
   const { id } = await context.params;
-  const { found } = await access(id, null);
+  const { user, found } = await access(id, null);
   if (!found) return fail(404, "That notepad is not available");
   if (found.role !== "owner") return fail(403, "Only the owner can delete this notepad");
 
+  // History goes with the notepad. The deletion itself is the one event that
+  // outlives it, which is what makes a deleted board explainable later.
   await deleteBoard(id);
+  await sql()`delete from pp_board_events where board_id = ${id}`;
+
+  emitBoardEvent({
+    type: "board.deleted",
+    boardId: id,
+    actorId: user?.id ?? null,
+    actorName: user?.name ?? "The owner",
+    role: "owner",
+    detail: found.board.title,
+  });
 
   return ok({ ok: true });
 }

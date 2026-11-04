@@ -41,6 +41,14 @@ export interface NotepadEntry {
   fileId?: string;
 }
 
+/** One row in the in-menu activity list. */
+export interface ActivityEntry {
+  /** One sentence, in the app's own words. */
+  text: string;
+  /** "4 min ago", already rounded by the caller. */
+  when: string;
+}
+
 export interface AppMenuProps {
   theme: ThemeChoice;
   onThemeChange: (theme: ThemeChoice) => void;
@@ -82,6 +90,16 @@ export interface AppMenuProps {
   onNotepadsOpen?: () => void;
   /** One line about Drive, under the shelf item. */
   syncNote?: ReactNode;
+  /**
+   * The last few things that happened to this notepad, newest first.
+   *
+   * The sentences are written by the app, not here: this package has no idea
+   * what "share.minted" means, and should not learn. An empty list renders
+   * nothing at all, so a deployment with no event log keeps a shorter menu.
+   */
+  activity?: readonly ActivityEntry[];
+  /** Called each time the menu opens; the app refreshes stale data here. */
+  onOpened?: () => void;
   /**
    * Another action rendered inside the same island, e.g. the style trigger on
    * touch widths. Keeping it here means the left edge is one island, not two.
@@ -127,6 +145,8 @@ export function AppMenu({
   onToggleDriveNotepad,
   onNotepadsOpen,
   syncNote,
+  activity,
+  onOpened,
   trailing,
 }: AppMenuProps) {
   const [open, setOpen] = useState(false);
@@ -284,6 +304,7 @@ export function AppMenu({
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => {
+            if (!open) onOpened?.();
             setOpen((value) => !value);
             setConfirmReset(false);
           }}
@@ -503,6 +524,20 @@ export function AppMenu({
               ) : null}
 
               {syncNote ? <p className="pp-menu-note">{syncNote}</p> : null}
+
+              {activity && activity.length > 0 ? (
+                <div className="pp-menu-section" data-testid="menu-activity">
+                  <span className="pp-menu-label">Recent activity</span>
+                  <ul className="pp-activity">
+                    {activity.map((entry, index) => (
+                      <li className="pp-activity-row" key={`${entry.text}-${index}`}>
+                        <span className="pp-activity-text">{entry.text}</span>
+                        <span className="pp-activity-when">{entry.when}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               {onAutoSyncChange ? (
                 <div className="pp-menu-section">

@@ -7,6 +7,7 @@ import {
   type BoardContent,
 } from "@/lib/server/boards";
 import { databaseConfigured } from "@/lib/server/db";
+import { emitBoardEvent } from "@/lib/server/events";
 import {
   allowRequest,
   cleanBoardId,
@@ -73,6 +74,14 @@ export async function POST(request: Request) {
       ownerId: user.id,
       title: cleanTitle(body?.title),
       content,
+    });
+    emitBoardEvent({
+      type: "board.created",
+      boardId: board.id,
+      actorId: user.id,
+      actorName: user.name,
+      role: "owner",
+      detail: board.title,
     });
     return ok({ board }, 201);
   } catch (error) {

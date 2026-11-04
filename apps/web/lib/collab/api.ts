@@ -1,4 +1,5 @@
 import type { Element } from "@penpaper/shared";
+import type { ActivityItem } from "@/lib/activity";
 
 /**
  * The browser's side of the account API.
@@ -23,6 +24,15 @@ export interface AccountState {
   configured: boolean;
   /** The socket service is configured, so live collaboration can start. */
   collab: boolean;
+  /** Redis is configured, so rooms and limits are shared between instances. */
+  shared?: boolean;
+  /** The board event log is configured, so there is an activity line to show. */
+  events?: boolean;
+}
+
+export interface BoardActivity {
+  enabled: boolean;
+  events: ActivityItem[];
 }
 
 export interface ServerBoardContent {
@@ -200,3 +210,19 @@ export function fetchCollabToken(input: {
     body: JSON.stringify({ guestId: input.guestId }),
   });
 }
+
+/**
+ * What happened on this board lately.
+ *
+ * Returns `enabled: false` on a deployment without the event pipeline, which is
+ * how the menu knows to leave the line out instead of showing an empty heading.
+ * A guest through a share link may read it: the route resolves the same link it
+ * would resolve for the drawing itself.
+ */
+export function fetchBoardActivity(
+  id: string,
+  shareToken?: string | null,
+): Promise<BoardActivity> {
+  return request(boardPath(id, shareToken, "/activity"));
+}
+

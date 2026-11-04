@@ -5,13 +5,13 @@ import { Redis } from "ioredis";
  *
  * Nothing here is required. With `REDIS_URL` unset the app falls back to the
  * per-process behaviours it had before: a fixed-window counter, a Postgres
- * session lookup, and a single-instance room table. That is deliberate — the
- * free Render service has no Redis, and a missing cache must never be the
- * reason a board fails to open.
+ * session lookup, and a local guard against repeated save events. That is
+ * deliberate — the free Render service has no Redis, and a missing cache must
+ * never be the reason a board fails to open.
  *
- * When it is set, Redis takes over two jobs that a second instance would
- * otherwise get wrong: one shared rate-limit window, and a session cache that
- * every route reads through.
+ * When it is set, Redis provides three things a single process cannot: one
+ * shared rate-limit window, a session cache every route reads through, and the
+ * once-guard that keeps a burst of autosaves to one line of activity.
  */
 
 const url = process.env.REDIS_URL?.trim();
@@ -195,6 +195,25 @@ export async function cacheDel(key: string): Promise<void> {
     await redis.del(`pp:cache:${key}`);
   } catch (error) {
     failed(error);
+  }
+}
+
+/**
+ * True the first time `key` is seen inside its window.
+ *
+ * Used to fold a burst of autosaves into one event: the board writes every
+ * 1.5 seconds while someone draws, and the event log should say "someone is
+ * working on this", not replay the strokes.
+ */
+export async function redisOnce(key: string, ttlMs: number): Promise<boolean | null> {
+  const redis = await ready();
+  if (!redis) return null;
+
+  try {
+    const result = await redis.set(`pp:once:${key}`, "1", "PX", Math.round(ttlMs), "NX");
+    return result === "OK";
+  } catch (error) {
+    return failed(error);
   }
 }
 

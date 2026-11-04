@@ -6,6 +6,7 @@ import {
   PropertiesPanel,
   StylePopover,
   Toolbar,
+  type ActivityEntry,
   type CanvasLayout,
   type NotepadEntry,
   type ThemeChoice,
@@ -76,6 +77,10 @@ export interface BoardChromeProps {
   /** Host only: show someone out of the room. */
   onRemovePeer?: (id: string) => void;
   onShare: () => void;
+  /** Recent board events, already phrased. Empty hides the section. */
+  activity?: readonly ActivityEntry[];
+  /** The menu opened, so anything stale behind it can be refreshed. */
+  onMenuOpened?: () => void;
 }
 
 /**
@@ -111,6 +116,8 @@ export function BoardChrome({
   roster,
   onRemovePeer,
   onShare,
+  activity,
+  onMenuOpened,
 }: BoardChromeProps) {
   const router = useRouter();
   const accountsConfigured = useAccountStore((state) => state.configured);
@@ -395,6 +402,8 @@ export function BoardChrome({
         notepads={entries}
         onOpenNotepad={openNotepad}
         onNewNotepad={() => void startNotepad()}
+        activity={activity}
+        onOpened={onMenuOpened}
         // A viewer may open other notepads, but must not rename or delete this
         // one from a link that grants no ownership.
         onRenameNotepad={readOnly ? undefined : renameNotepad}

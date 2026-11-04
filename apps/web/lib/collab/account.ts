@@ -21,6 +21,8 @@ export interface AccountStoreState {
   user: Account | null;
   configured: boolean;
   collab: boolean;
+  /** The server reported a board event log, so activity is worth fetching. */
+  events: boolean;
   phase: AccountPhase;
   error: string | null;
 
@@ -36,6 +38,7 @@ export const useAccountStore = create<AccountStoreState>((set, get) => ({
   user: null,
   configured: false,
   collab: false,
+  events: false,
   phase: "idle",
   error: null,
 
@@ -53,6 +56,7 @@ export const useAccountStore = create<AccountStoreState>((set, get) => ({
           user: state.user,
           configured: state.configured,
           collab: state.collab,
+          events: state.events === true,
           phase: "ready",
           error: null,
         });

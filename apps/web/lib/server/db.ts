@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { BOARD_EVENTS_DDL, BOARD_EVENTS_INDEXES } from "../../server/schema.mjs";
 
 /**
  * The server's Postgres connection.
@@ -104,6 +105,12 @@ async function createSchema(): Promise<void> {
     )
   `;
   await db`create index if not exists pp_share_links_board on pp_share_links (board_id)`;
+
+  // Written by the worker from the Kafka topic, read by the activity route.
+  // The definition lives in server/schema.mjs because that separate process
+  // uses the same one.
+  await db.unsafe(BOARD_EVENTS_DDL);
+  for (const statement of BOARD_EVENTS_INDEXES) await db.unsafe(statement);
 }
 
 /** Runs the schema once per process. */
