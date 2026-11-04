@@ -1,7 +1,7 @@
 import { createSession, setSessionCookie, signInWithGoogle } from "@/lib/server/auth";
 import { databaseConfigured } from "@/lib/server/db";
 import { googleConfigured, verifyGoogleAccessToken } from "@/lib/server/google";
-import { allow, clientKey, fail, ok, readJson } from "@/lib/server/http";
+import { allowRequest, clientKey, fail, ok, readJson } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   if (!databaseConfigured || !googleConfigured) {
     return fail(503, "Google sign-in is not configured on this server");
   }
-  if (!allow(`google:${clientKey(request)}`, 12, 60_000)) {
+  if (!(await allowRequest(`google:${clientKey(request)}`, 12, 60_000))) {
     return fail(429, "Too many attempts. Try again in a minute.");
   }
 

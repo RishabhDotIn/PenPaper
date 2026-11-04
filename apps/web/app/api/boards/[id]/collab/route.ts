@@ -2,7 +2,7 @@ import { currentUser } from "@/lib/server/auth";
 import { getBoard } from "@/lib/server/boards";
 import { collabConfigured, colorFor, guestName, signCollabToken } from "@/lib/server/collab-token";
 import { databaseConfigured } from "@/lib/server/db";
-import { cleanBoardId, fail, ok, readJson } from "@/lib/server/http";
+import { allowRequest, cleanBoardId, fail, ok, readJson } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 
@@ -43,11 +43,19 @@ export async function POST(request: Request, context: RouteContext) {
   const identity = user?.id ?? guestId;
   if (!identity) return fail(400, "This browser could not be identified");
 
+  // Every reconnect mints a token. A client that reconnects in a loop should be
+  // slowed here rather than allowed to keep a socket handshake busy.
+  if (!(await allowRequest(`collab:${identity}`, 40, 60_000))) {
+    return fail(429, "Too many room connections. Try again in a minute.");
+  }
+
+  const name = user?.name ?? guestName(identity);
+
   const signed = await signCollabToken({
     boardId: id,
     userId: identity,
     role: found.role,
-    name: user?.name ?? guestName(identity),
+    name,
     color: colorFor(identity),
   });
 

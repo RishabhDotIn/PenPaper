@@ -1,7 +1,7 @@
 import { currentUser } from "@/lib/server/auth";
 import { createShare, getBoard, revokeShare } from "@/lib/server/boards";
 import { databaseConfigured } from "@/lib/server/db";
-import { fail, ok, readJson } from "@/lib/server/http";
+import { allowRequest, fail, ok, readJson } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 
@@ -31,11 +31,18 @@ export async function POST(request: Request, context: RouteContext) {
   if (!found) return fail(404, "That notepad is not available");
   if (found.role !== "owner") return fail(403, "Only the owner can share this notepad");
 
+  // Minting revokes the previous link for that role, so a burst here is either
+  // a confused client or someone cycling through tokens.
+  if (!(await allowRequest(`share:${user.id}`, 10, 60_000))) {
+    return fail(429, "Too many links at once. Try again in a minute.");
+  }
+
   const body = await readJson<Body>(request);
   const role = body?.role === "viewer" ? "viewer" : body?.role === "editor" ? "editor" : null;
   if (!role) return fail(400, "Choose whether the link can edit or only view");
 
   const link = await createShare({ boardId: id, userId: user.id, role });
+
   return ok({
     token: link.token,
     role: link.role,
@@ -57,5 +64,6 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (found.role !== "owner") return fail(403, "Only the owner can manage sharing");
 
   await revokeShare(id);
+
   return ok({ ok: true });
 }

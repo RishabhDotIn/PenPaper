@@ -8,6 +8,7 @@ import {
 } from "@/lib/server/boards";
 import { databaseConfigured } from "@/lib/server/db";
 import {
+  allowRequest,
   cleanBoardId,
   cleanTitle,
   fail,
@@ -45,6 +46,13 @@ export async function POST(request: Request) {
 
   const user = await currentUser().catch(() => null);
   if (!user) return fail(401, "Sign in to save notepads to your account");
+
+  // A device uploads its library when it first signs in, which is a burst of
+  // creates. The limit is per account and generous enough for that, and small
+  // enough that a script cannot fill the database in a minute.
+  if (!(await allowRequest(`boards:new:${user.id}`, 40, 60_000))) {
+    return fail(429, "Too many new notepads. Try again in a minute.");
+  }
 
   const body = await readJson<CreateBody>(request);
   const id = cleanBoardId(body?.id);

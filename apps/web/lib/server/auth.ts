@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { ready, sql } from "./db";
 import type { GoogleIdentity } from "./google";
+import { cacheDel, cacheGet, cacheSet } from "./redis";
 
 /**
  * Accounts, backed by Google and by our own sessions.
@@ -97,7 +98,11 @@ export async function createSession(userId: string): Promise<{ token: string; ex
 export async function destroySession(token: string | undefined): Promise<void> {
   if (!token) return;
   await ready();
-  await sql()`delete from pp_sessions where token_hash = ${hashToken(token)}`;
+  const hash = hashToken(token);
+  await sql()`delete from pp_sessions where token_hash = ${hash}`;
+  // Drop the cached copy too, or a signed-out tab keeps resolving to its user
+  // for as long as the cache entry lives.
+  await cacheDel(`session:${hash}`);
 }
 
 export async function setSessionCookie(token: string, expiresAt: Date): Promise<void> {
@@ -126,13 +131,38 @@ export async function currentUser(): Promise<User | null> {
   const token = await sessionToken();
   if (!token) return null;
 
+  const hash = hashToken(token);
+
+  // Every API route resolves the caller, and every board read or save goes
+  // through one. On the free instance that round-trip is the most frequent
+  // query in the app, and a session changes only when it is created or
+  // destroyed, so a short cache is worth more here than anywhere else.
+  const cached = await cacheGet<{ user: User; expiresAt: number }>(`session:${hash}`);
+  if (cached && cached.expiresAt > Date.now()) return cached.user;
+
   await ready();
   const [row] = await sql()`
-    select u.id, u.email, u.name, u.picture
+    select u.id, u.email, u.name, u.picture, s.expires_at
     from pp_sessions s
     join pp_users u on u.id = s.user_id
-    where s.token_hash = ${hashToken(token)} and s.expires_at > now()
+    where s.token_hash = ${hash} and s.expires_at > now()
   `;
+  if (!row) return null;
 
-  return (row as User | undefined) ?? null;
+  const user: User = {
+    id: row.id as string,
+    email: row.email as string,
+    name: row.name as string,
+    picture: (row.picture as string | null) ?? null,
+  };
+
+  const expiresAt = (row.expires_at as Date).getTime();
+  const remaining = expiresAt - Date.now();
+  if (remaining > 0) {
+    // Never outlive the session itself, and never cache for more than five
+    // minutes so a database-side revocation is not invisible for long.
+    await cacheSet(`session:${hash}`, { user, expiresAt }, Math.min(5 * 60_000, remaining));
+  }
+
+  return user;
 }

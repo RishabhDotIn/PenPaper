@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { redisAllow } from "./redis";
 
 /** Small helpers shared by the route handlers. */
 
@@ -61,6 +62,24 @@ export function allow(key: string, limit: number, windowMs: number): boolean {
   }
 
   return current.count <= limit;
+}
+
+/**
+ * The limiter the routes call.
+ *
+ * With Redis configured the window is shared and sliding, so a client cannot
+ * spend a full quota at the end of one minute and the next quota a second
+ * later, and a restart does not hand everyone a clean slate. Without Redis this
+ * is exactly the in-process fixed window above, which is honest for the free
+ * single-instance deployment.
+ */
+export async function allowRequest(
+  key: string,
+  limit: number,
+  windowMs: number,
+): Promise<boolean> {
+  const shared = await redisAllow(key, limit, windowMs);
+  return shared ?? allow(key, limit, windowMs);
 }
 
 /** Trims and bounds a display name. */

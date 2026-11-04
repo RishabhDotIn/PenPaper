@@ -10,7 +10,7 @@ import {
   type Role,
 } from "@/lib/server/boards";
 import { databaseConfigured } from "@/lib/server/db";
-import { cleanTitle, fail, ok, readJson } from "@/lib/server/http";
+import { allowRequest, cleanTitle, fail, ok, readJson } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 
@@ -60,6 +60,13 @@ export async function PUT(request: Request, context: RouteContext) {
   if (!found) return fail(404, "That notepad is not available");
   if (!canWrite(found.role)) return fail(403, "This link is view only");
 
+  // Autosave is the hottest write in the app: every open tab pokes it every
+  // 1.5 seconds. The limit is per board, not per client, so one runaway tab
+  // cannot spend the allowance the others need.
+  if (!(await allowRequest(`board:save:${id}`, 180, 60_000))) {
+    return fail(429, "This notepad is saving too often. Try again shortly.");
+  }
+
   const body = await readJson<PatchBody>(request);
   if (!looksLikeContent(body?.content)) return fail(400, "That notepad is not a valid drawing");
 
@@ -101,5 +108,6 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (found.role !== "owner") return fail(403, "Only the owner can delete this notepad");
 
   await deleteBoard(id);
+
   return ok({ ok: true });
 }
